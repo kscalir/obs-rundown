@@ -849,7 +849,7 @@ export default function PropertiesPanel({
           overflow: "auto",
         }}
       >
-        {isLoading && (
+        {loading && (
           <div
             style={{
               padding: 15,

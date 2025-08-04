@@ -235,10 +235,18 @@ export default function RundownView({ showId, selectedTab }) {
     
     setLoading(true);
     try {
+      console.log(`Fetching segments for episode ${episodeId}`);
       const res = await fetch(`${API_BASE_URL}/api/episodes/${episodeId}/segments?include=groups,items`);
-      if (!res.ok) throw new Error("Failed to fetch segments");
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`Failed to fetch segments: ${res.status} ${errorText}`);
+        throw new Error(`Failed to fetch segments: ${res.status}`);
+      }
       
       const data = await res.json();
+      console.log(`Received ${data.length} segments with their groups and items`);
+      
       // Add default expanded state to segments and groups
       const segmentsWithState = data.map(segment => ({
         ...segment,
@@ -780,16 +788,31 @@ export default function RundownView({ showId, selectedTab }) {
       
       // Update in database - use individual PATCH calls for each segment
       try {
+        console.log("Reordering segments:", newSegments.map((s, idx) => ({ id: s.id, position: idx })));
+        
         // Update each segment's position individually
-        await Promise.all(
+        const results = await Promise.all(
           newSegments.map((segment, idx) => 
             fetch(`${API_BASE_URL}/api/segments/${segment.id}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ position: idx })
             })
+            .then(res => {
+              console.log(`Segment ${segment.id} position update status:`, res.status);
+              return res.json();
+            })
+            .then(data => {
+              console.log(`Segment ${segment.id} update response:`, data);
+              return data;
+            })
           )
         );
+        
+        console.log("All segment position updates completed:", results);
+        
+        // Force a refresh to ensure UI reflects server state
+        fetchSegments(selectedEpisode.id);
       } catch (err) {
         console.error("Error updating segment positions:", err);
         // On error, refresh from server to restore correct state
@@ -832,7 +855,7 @@ export default function RundownView({ showId, selectedTab }) {
               body: JSON.stringify({ position: idx })
             })
           )
-        );
+          );
       } catch (err) {
         console.error("Error updating group positions:", err);
         // On error, refresh from server to restore correct state
