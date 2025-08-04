@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Template Player</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: transparent;
+    }
+    
+    #container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    
+    iframe {
+      border: none;
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+    }
+    
+    #status {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      padding: 5px 10px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+    
+    #status.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="status">Not connected</div>
+  </div>
+  
+  <script>
+    // Get channel from URL
+    const urlParams = new URL(window.location.href).searchParams;
+    const channel = urlParams.get('channel') || 1;
+    
+    // Status display
+    const status = document.getElementById('status');
+    
+    function showStatus(message) {
+      status.textContent = message;
+      status.classList.add('visible');
+      setTimeout(() => {
+        status.classList.remove('visible');
+      }, 3000);
+    }
+    
+    // Current template state
+    let currentTemplate = null;
+    let currentIframe = null;
+    
+    // Connect to WebSocket
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws?channel=${channel}`;
+      
+      const socket = new WebSocket(wsUrl);
+      
+      socket.onopen = () => {
+        showStatus(`Connected to channel ${channel}`);
+      };
+      
+      socket.onclose = () => {
+        showStatus('Connection lost. Reconnecting...');
+        // Reconnect after delay
+        setTimeout(connectWebSocket, 2000);
+      };
+      
+      socket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        showStatus('Connection error');
+      };
+      
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          handleCommand(message);
+        } catch (e) {
+          console.error('Error parsing message:', e);
+        }
+      };
+    }
+    
+    // Handle commands
+    function handleCommand(message) {
+      const { command, templateId, data } = message;
+      
+      switch (command) {
+        case 'play':
+          loadTemplate(templateId, data);
+          break;
+          
+        case 'update':
+          updateTemplate(data);
+          break;
+          
+        case 'stop':
+          if (currentIframe) {
+            currentIframe.contentWindow.postMessage({ command: 'stop' }, '*');
+          }
+          break;
+          
+        case 'clear':
+          clearTemplate();
+          break;
+      }
+      
+      showStatus(`Command: ${command}`);
+    }
+    
+    // Load a template
+    function loadTemplate(templateId, data) {
+      if (currentTemplate === templateId && currentIframe) {
+        // Template already loaded, just update data and play
+        updateTemplate(data);
+        currentIframe.contentWindow.postMessage({ command: 'play' }, '*');
+        return;
+      }
+      
+      // Remove current template if different
+      if (currentIframe) {
+        currentIframe.remove();
+      }
+      
+      // Create new iframe
+      currentIframe = document.createElement('iframe');
+      currentIframe.src = `/templates/${templateId}/index.html`;
+      document.getElementById('container').appendChild(currentIframe);
+      
+      // Wait for iframe to load before sending data
+      currentIframe.onload = () => {
+        currentTemplate = templateId;
+        updateTemplate(data);
+        currentIframe.contentWindow.postMessage({ command: 'play' }, '*');
+      };
+    }
+    
+    // Update template with new data
+    function updateTemplate(data) {
+      if (currentIframe) {
+        currentIframe.contentWindow.postMessage({ command: 'data', data }, '*');
+      }
+    }
+    
+    // Clear template
+    function clearTemplate() {
+      if (currentIframe) {
+        currentIframe.remove();
+        currentIframe = null;
+        currentTemplate = null;
+      }
+    }
+    
+    // Start WebSocket connection
+    connectWebSocket();
+    
+    // Show initial status
+    showStatus(`Channel ${channel} - Waiting for connection...`);
+  </script>
+</body>
+</html>

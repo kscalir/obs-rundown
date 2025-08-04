@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lower Third Template</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            background-color: transparent;
+        }
+        
+        .template-container {
+            position: relative;
+            width: 1920px;
+            height: 1080px;
+            background-color: transparent;
+        }
+        
+        .lower-third {
+            position: absolute;
+            bottom: 150px;
+            left: 100px;
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            transform: translateX(-50px);
+            transition: all 0.5s ease-out;
+        }
+        
+        .lower-third.active {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        
+        .lower-third.exit {
+            opacity: 0;
+            transform: translateX(-50px);
+        }
+        
+        .bar {
+            width: 800px;
+            height: 80px;
+            background-color: #1976d2;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        .name {
+            color: white;
+            font-size: 40px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            margin-right: auto;
+        }
+        
+        .title-container {
+            background-color: rgba(0,0,0,0.6);
+            border-radius: 6px;
+            padding: 10px 20px;
+            margin-top: 8px;
+            margin-left: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transform: translateY(-10px);
+            opacity: 0;
+            transition: all 0.4s ease-out 0.3s;
+        }
+        
+        .title {
+            color: white;
+            font-size: 30px;
+            font-style: italic;
+        }
+        
+        .lower-third.active .title-container {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        
+        .lower-third.exit .title-container {
+            transform: translateY(-10px);
+            opacity: 0;
+            transition-delay: 0s;
+        }
+    </style>
+</head>
+<body>
+    <div class="template-container">
+        <div id="lowerThird" class="lower-third">
+            <div class="bar" id="bar">
+                <div id="f0" class="name">John Doe</div>
+            </div>
+            <div class="title-container">
+                <div id="f1" class="title">Software Engineer</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Template API implementation
+        let templateState = 'stopped';
+        let templateData = {};
+        
+        // Function to update the DOM with new data
+        function updateTemplate(data) {
+            // Update name field
+            if (data.f0 !== undefined) {
+                document.getElementById('f0').innerText = data.f0;
+            }
+            
+            // Update title field
+            if (data.f1 !== undefined) {
+                document.getElementById('f1').innerText = data.f1;
+            }
+            
+            // Update bar color
+            if (data.color !== undefined) {
+                document.getElementById('bar').style.backgroundColor = data.color;
+            }
+        }
+        
+        // CasparCG/Loopic-style template functions
+        function play() {
+            console.log('Template: play');
+            templateState = 'playing';
+            
+            // Show with animation
+            const lowerThird = document.getElementById('lowerThird');
+            lowerThird.classList.remove('exit');
+            
+            // Trigger animation on next frame to ensure CSS transition works
+            requestAnimationFrame(() => {
+                lowerThird.classList.add('active');
+            });
+        }
+        
+        function update(data) {
+            console.log('Template: update', data);
+            updateTemplate(data);
+        }
+        
+        function stop() {
+            console.log('Template: stop');
+            templateState = 'stopping';
+            
+            // Hide with animation
+            const lowerThird = document.getElementById('lowerThird');
+            lowerThird.classList.remove('active');
+            lowerThird.classList.add('exit');
+            
+            // Reset state after animation completes
+            setTimeout(() => {
+                templateState = 'stopped';
+            }, 500); // Match animation duration
+        }
+        
+        // Data handler (main entry point for template updates)
+        function data(dataObj) {
+            console.log('Template: data received', dataObj);
+            templateData = {...templateData, ...dataObj};
+            updateTemplate(templateData);
+            
+            // Auto-play if receiving data for the first time
+            if (templateState === 'stopped') {
+                play();
+            }
+        }
+        
+        // Initialize with empty state
+        window.addEventListener('load', () => {
+            console.log('Template: loaded and ready');
+            
+            // Check for URL parameters (for testing)
+            const urlParams = new URLSearchParams(window.location.search);
+            const testData = urlParams.get('data');
+            if (testData) {
+                try {
+                    const parsedData = JSON.parse(decodeURIComponent(testData));
+                    data(parsedData);
+                } catch (e) {
+                    console.error('Failed to parse test data', e);
+                }
+            }
+            
+            // Listen for window messages (for preview iframe)
+            window.addEventListener('message', (event) => {
+                const {command, data: msgData} = event.data;
+                switch(command) {
+                    case 'play':
+                        play();
+                        break;
+                    case 'stop':
+                        stop();
+                        break;
+                    case 'update':
+                        update(msgData);
+                        break;
+                    case 'data':
+                        data(msgData);
+                        break;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

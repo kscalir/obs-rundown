@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<template>
+  <name>Lower Third</name>
+  <description>Name and title lower third graphic</description>
+  <author>Rundown App</author>
+  <version>1.0</version>
+  <parameters>
+    <parameter id="f0" type="STRING" default="Name" info="Name" />
+    <parameter id="f1" type="STRING" default="Title" info="Title or description" />
+    <parameter id="color" type="COLOR" default="#1976d2" info="Background Color" />
+  </parameters>
+  <thumbnail>thumbnail.png</thumbnail>
+  <html>index.html</html>
+</template>

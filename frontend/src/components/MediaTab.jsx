@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { API_BASE_URL } from "../config";
 
 // File type helper
 function getFileType(media) {
@@ -11,12 +12,9 @@ function getFileType(media) {
 
 function getMediaUrl(media) {
   if (!media.filename) return "";
-  if (/\.\w+$/.test(media.filename)) return `/media/${media.filename}`;
-  if (media.originalname && /\.\w+$/.test(media.originalname)) {
-    const ext = media.originalname.split('.').pop();
-    return `/media/${media.filename}.${ext}`;
-  }
-  return `/media/${media.filename}`;
+  // Make sure we're using absolute paths for both media and thumbnails
+  const basePath = 'http://localhost:5050/media';
+  return `${basePath}/${media.filename}`;
 }
 
 const FILTER_OPTIONS = [
@@ -47,7 +45,7 @@ export default function MediaTab({ showId, onMediaUploaded }) {
       setFilteredList([]);
       return;
     }
-    let url = `http://localhost:5050/api/shows/${showId}/media`;
+    let url = `${API_BASE_URL}/api/shows/${showId}/media`;
     const params = [];
     if (typeFilter) params.push(`type=${encodeURIComponent(typeFilter)}`);
     if (search.trim()) params.push(`search=${encodeURIComponent(search.trim())}`);
@@ -88,7 +86,8 @@ export default function MediaTab({ showId, onMediaUploaded }) {
     setUploadError(null);
     const formData = new FormData();
     formData.append("file", newMediaFile);
-    formData.append("show_id", showId);
+    // Change this line to match server expectation
+    formData.append("showId", showId); // Changed from "show_id" to "showId"
     formData.append("name", newMediaName || newMediaFile.name);
 
     try {
@@ -96,11 +95,15 @@ export default function MediaTab({ showId, onMediaUploaded }) {
         method: "POST",
         body: formData,
       });
-      if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || `Upload failed: ${res.statusText}`);
+      }
       setUploading(false);
       closeUploadModal();
       if (onMediaUploaded) onMediaUploaded();
     } catch (err) {
+      console.error('Upload error:', err);
       setUploadError(err.message);
       setUploading(false);
     }
@@ -126,9 +129,8 @@ export default function MediaTab({ showId, onMediaUploaded }) {
   };
   const handleEditChange = (e) => setEditingName(e.target.value);
   const handleEditSave = async (media) => {
-    if (!editingName.trim()) return;
     try {
-      const res = await fetch(`http://localhost:5050/api/media/${media.id}/name`, {
+      const res = await fetch(`${API_BASE_URL}/api/media/${media.id}/name`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: editingName }),
@@ -154,11 +156,7 @@ export default function MediaTab({ showId, onMediaUploaded }) {
       </div>
     );
   }
-
-  return (
-    // ... [rest of your render code, unchanged, as in your existing MediaTab.jsx]
-    // For brevity, your render code (filter/search, grid, upload modal) remains unchanged
-    // Just copy everything from the return ( ... ) in your current file
+return (
     <div
       style={{
         background: "#fff",
@@ -172,6 +170,123 @@ export default function MediaTab({ showId, onMediaUploaded }) {
         height: "auto"
       }}
     >
+      {/* Add Controls Bar */}
+      <div style={{ 
+        display: "flex", 
+        alignItems: "center", 
+        gap: 16, 
+        marginBottom: 24,
+        padding: "0 32px"
+      }}>
+        <button 
+          onClick={openUploadModal}
+          style={{
+            fontWeight: 600,
+            padding: "8px 16px",
+            borderRadius: 6,
+            background: "#1976d2",
+            color: "white",
+            border: "none",
+            cursor: "pointer"
+          }}
+        >
+          + Add Media
+        </button>
+
+        <select
+          value={typeFilter}
+          onChange={handleFilterChange}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 6,
+            border: "1.5px solid #e0e0e0"
+          }}
+        >
+          {FILTER_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        <input
+          type="text"
+          placeholder="Search media..."
+          value={search}
+          onChange={handleSearchChange}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 6,
+            border: "1.5px solid #e0e0e0",
+            minWidth: 200
+          }}
+        />
+      </div>
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: "white",
+            padding: 24,
+            borderRadius: 8,
+            minWidth: 300
+          }}>
+            <h3 style={{ marginTop: 0 }}>Upload Media</h3>
+            <form onSubmit={handleUploadSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <input
+                  type="file"
+                  onChange={handleUploadFileChange}
+                  accept="image/*,video/*,audio/*"
+                />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <input
+                  type="text"
+                  value={newMediaName}
+                  onChange={e => setNewMediaName(e.target.value)}
+                  placeholder="Optional display name"
+                  style={{
+                    width: "100%",
+                    padding: "6px 8px",
+                    borderRadius: 4,
+                    border: "1px solid #ccc"
+                  }}
+                />
+              </div>
+              {uploadError && (
+                <div style={{ color: "red", marginBottom: 16 }}>{uploadError}</div>
+              )}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button type="button" onClick={closeUploadModal}>Cancel</button>
+                <button 
+                  type="submit" 
+                  disabled={uploading}
+                  style={{ fontWeight: 600 }}
+                >
+                  {uploading ? "Uploading..." : "Upload"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+  
+
+
       {filteredList.length === 0 ? (
         <div style={{ color: "#aaa", padding: 24 }}>No media found for this show.</div>
       ) : (
@@ -187,7 +302,9 @@ export default function MediaTab({ showId, onMediaUploaded }) {
           {filteredList.map((media) => {
             const url = getMediaUrl(media);
             const type = getFileType(media);
-            const thumbUrl = media.thumb ? `/media/thumbs/${media.thumb}` : url;
+            const thumbUrl = media.thumb 
+              ? `http://localhost:5050/media/thumbs/${media.thumb}` 
+              : getMediaUrl(media);
             const displayName = media.displayName || media.name || media.originalname || media.filename;
 
             return (
@@ -253,6 +370,11 @@ export default function MediaTab({ showId, onMediaUploaded }) {
                           width: "100%",
                           height: "100%",
                           objectFit: "cover",
+                        }}
+                        onError={(e) => {
+                          console.error('Image failed to load:', thumbUrl);
+                          e.target.style.display = 'none';
+                          e.target.parentElement.innerHTML = '(Image load failed)';
                         }}
                       />
                     </div>

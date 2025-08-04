@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { API_BASE_URL } from "../config";
 
 function ShowsPanel({ show, setShow }) {
   const [shows, setShows] = useState([]);
@@ -6,14 +7,15 @@ function ShowsPanel({ show, setShow }) {
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    fetch("http://localhost:5050/api/shows")
+    fetch(`${API_BASE_URL}/api/shows`)
       .then(r => r.json())
-      .then(setShows);
+      .then(setShows)
+      .catch(err => console.error("Error fetching shows:", err));
   }, []);
 
   const addShow = async () => {
     if (!newName.trim()) return;
-    const res = await fetch("http://localhost:5050/api/shows", {
+    const res = await fetch(`${API_BASE_URL}/api/shows`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newName }),

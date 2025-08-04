@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import MediaTab from "./MediaTab";
-import RundownTab from "./RundownTab";
+import RundownView from "./RundownView";
+import { API_BASE_URL } from "../config";
 
 // --- Constants ---
 const LOCAL_STORAGE_TAB_STATE_KEY = "obsRundownTabState";
@@ -143,7 +144,7 @@ export default function MainPanel({ showId, onDragEnd }) {
         {activeTab === "media" ? (
           <MediaTab showId={showId} />
         ) : (
-          <RundownTab 
+          <RundownView 
             showId={showId} 
             selectedTab={activeTab} 
             onDragEnd={onDragEnd} 

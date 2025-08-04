@@ -1,5 +1,25 @@
-import React from 'react';
+import React, { useEffect } from "react";
 import { Droppable, Draggable } from "@hello-pangea/dnd";
+import { API_BASE_URL } from "../config";
+
+// Make a specific key for expanded state storage
+const STORAGE_KEYS = {
+  RUNDOWN: "obsRundownExpandedState"
+};
+
+// --- Helper: LocalStorage JSON get/set ---
+function getLocalStorageJSON(key, fallback = {}) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+function setLocalStorageJSON(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
 
 // --- Styles ---
 const STYLES = {
@@ -9,7 +29,8 @@ const STYLES = {
     overflowY: "auto",
     overflowX: "hidden",
     width: "100%",
-    boxSizing: "border-box"
+    boxSizing: "border-box",
+    padding: "0 10px"
   },
   segmentList: {
     listStyle: "none",
@@ -86,14 +107,37 @@ const STYLES = {
     border: "none",
     cursor: "pointer",
     padding: "4px 8px"
+  },
+  addButton: {
+    marginBottom: 16,
+    fontWeight: 600,
+    padding: "8px 16px",
+    borderRadius: 6,
+    background: "#1976d2",
+    color: "white",
+    border: "none",
+    cursor: "pointer"
+  },
+  segmentHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8
+  },
+  groupHeader: {
+    display: "flex",
+    alignItems: "center",
+    padding: "8px 14px",
+    gap: 10
   }
 };
 
 export default function RundownList({
   segments,
-  onToggleSegment,
-  onToggleGroup,
+  onToggleSegment: parentToggleSegment,
+  onToggleGroup: parentToggleGroup,
   onAddGroup,
+  onAddSegment,
   onEditSegment,
   onEditGroup,
   onEditItem,
@@ -104,24 +148,98 @@ export default function RundownList({
   editingId,
   editingValue,
   setEditingValue,
-  inputRef
+  inputRef,
+  style,
+  onItemClick,  // Add this prop
+  selectedItem  // Add this prop
 }) {
+  // Local toggle handlers that update localStorage
+  const onToggleSegment = (segId) => {
+    // Update localStorage with current expand states
+    const savedState = getLocalStorageJSON(STORAGE_KEYS.RUNDOWN, {
+      segments: {},
+      groups: {}
+    });
+    
+    // Find segment to toggle in current segments prop
+    const seg = segments.find(s => s.id === segId);
+    if (seg) {
+      // Store the opposite of current expanded state
+      savedState.segments[segId] = !seg.expanded;
+      setLocalStorageJSON(STORAGE_KEYS.RUNDOWN, savedState);
+    }
+    
+    // Call parent handler
+    parentToggleSegment(segId);
+  };
+
+  const onToggleGroup = (segId, groupId) => {
+    // Update localStorage with current expand states
+    const savedState = getLocalStorageJSON(STORAGE_KEYS.RUNDOWN, {
+      segments: {},
+      groups: {}
+    });
+    
+    // Find group to toggle in current segments prop
+    const seg = segments.find(s => s.id === segId);
+    const group = seg?.groups?.find(g => g.id === groupId);
+    if (group) {
+      // Store the opposite of current expanded state
+      savedState.groups[groupId] = !group.expanded;
+      setLocalStorageJSON(STORAGE_KEYS.RUNDOWN, savedState);
+    }
+    
+    // Call parent handler
+    parentToggleGroup(segId, groupId);
+  };
+
+  // Log the received segments prop whenever it changes
+  useEffect(() => {
+    console.log('RundownList received segments:', segments);
+  }, [segments]);
+
   // --- Render Methods ---
-  const renderItem = (item, dragProvided) => (
-    <li
-      ref={dragProvided.innerRef}
-      {...dragProvided.draggableProps}
-      {...dragProvided.dragHandleProps}
-      style={{
-        ...STYLES.itemContainer,
-        ...dragProvided.draggableProps.style
-      }}
-    >
-      <span style={{ flex: 1 }}>
+  const renderItem = (item, dragProvided) => {
+    // Function to get icon based on item type
+    const getItemIcon = (type) => {
+      switch (type) {
+        case "graphics":
+        case "toolbox-graphicstemplate":
+          return "🖼️";
+        case "obscommand":
+        case "toolbox-obscommand":
+          return "🎬";
+        case "note":
+        case "toolbox-presenternote":
+          return "📝";
+        case "video":
+        case "toolbox-video":
+          return "🎥";
+        case "audio":
+        case "toolbox-audio":
+          return "🔊";
+        default:
+          return "📄";
+      }
+    };
+
+    return (
+      <li
+        ref={dragProvided.innerRef}
+        {...dragProvided.draggableProps}
+        {...dragProvided.dragHandleProps}
+        onClick={() => onItemClick?.(item)}
+        style={{
+          ...STYLES.itemContainer,
+          ...dragProvided.draggableProps.style,
+          backgroundColor: selectedItem === item.id ? "#e3f2fd" : "#fff",
+          border: selectedItem === item.id ? "1.5px solid #1976d2" : "1.5px solid #b1c7e7",
+          cursor: "pointer"
+        }}
+      >
         {editingType === "item" && editingId === item.id ? (
           <input
             ref={inputRef}
-            type="text"
             value={editingValue}
             onChange={e => setEditingValue(e.target.value)}
             onBlur={() => onEditItem(item.id, editingValue)}
@@ -131,31 +249,41 @@ export default function RundownList({
             }}
             style={STYLES.editInput}
             autoFocus
+            onClick={e => e.stopPropagation()} // Prevent item selection when editing
           />
         ) : (
-          <span 
-            onClick={() => onEditItem(item.id, (item.data?.title || item.name || ""))}
-            style={{ cursor: "pointer", display: "flex", alignItems: "center" }}
-          >
-            <span style={{ marginRight: 6 }}>{item.data?.icon || ""}</span>
-            <span>{item.data?.title || "Untitled Item"}</span>
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
+            <span style={{ fontSize: "1.2em" }}>{getItemIcon(item.type)}</span>
+            <span 
+              style={{ flex: 1 }}
+              onClick={e => {
+                e.stopPropagation(); // Prevent item selection when editing title
+                onEditItem(item.id, item.title || "");
+              }}
+            >
+              {item.title || item.data?.title || "Untitled Item"}
+            </span>
+          </div>
         )}
-      </span>
-      <button
-        onClick={() => onDeleteItem(item.id)}
-        style={STYLES.deleteButton}
-      >
-        🗑
-      </button>
-    </li>
-  );
+        <button
+          onClick={e => {
+            e.stopPropagation(); // Prevent item selection when deleting
+            onDeleteItem(item.id);
+          }}
+          style={STYLES.deleteButton}
+        >
+          🗑
+        </button>
+      </li>
+    );
+  };
 
   const renderGroup = (segment, group, groupIdx) => (
     <Draggable 
       key={group.id} 
       draggableId={`group-${group.id}`} 
       index={groupIdx}
+      type="group" // Add this line
     >
       {(dragProvided) => (
         <li
@@ -167,7 +295,7 @@ export default function RundownList({
           }}
         >
           <div 
-            style={STYLES.header}
+            style={STYLES.groupHeader}
             {...dragProvided.dragHandleProps}
           >
             <button
@@ -241,9 +369,19 @@ export default function RundownList({
     </Draggable>
   );
 
+
+  
   // --- Main Render ---
   return (
-    <div style={STYLES.container}>
+    <div style={{ ...STYLES.container, ...style }}>
+      {/* Add Segment Button */}
+      <button 
+        onClick={onAddSegment}
+        style={STYLES.addButton}
+      >
+        + Add Segment
+      </button>
+
       <Droppable droppableId="segments" type="segment">
         {(provided) => (
           <ul
@@ -267,7 +405,7 @@ export default function RundownList({
                       background: snapshot.isDragging ? "#e3f2fd" : "#dbe7f7"
                     }}
                   >
-                    <div style={STYLES.header}>
+                    <div style={STYLES.segmentHeader}>
                       <button
                         onClick={() => onToggleSegment(segment.id)}
                         style={STYLES.expandButton}
@@ -313,11 +451,20 @@ export default function RundownList({
                     </div>
 
                     {segment.expanded && (
-                      <ul style={STYLES.groupList}>
-                        {(segment.groups || []).map((group, groupIdx) => 
-                          renderGroup(segment, group, groupIdx)
+                      <Droppable droppableId={`groups-${segment.id}`} type="group">
+                        {(provided) => (
+                          <ul 
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            style={STYLES.groupList}
+                          >
+                            {(segment.groups || []).map((group, groupIdx) => 
+                              renderGroup(segment, group, groupIdx)
+                            )}
+                            {provided.placeholder}
+                          </ul>
                         )}
-                      </ul>
+                      </Droppable>
                     )}
                   </li>
                 )}
@@ -330,3 +477,4 @@ export default function RundownList({
     </div>
   );
 }
+

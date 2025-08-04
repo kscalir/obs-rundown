@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import ShowsPanel from "./components/ShowsPanel";
 import MainPanel from "./components/MainPanel";
+import { API_BASE_URL } from "./config";
 
 
 function App() {
@@ -36,7 +37,7 @@ function App() {
 
   const saveSegmentPositions = async (newSegments) => {
     await Promise.all(newSegments.map((seg, idx) =>
-      fetch(`http://localhost:5050/api/segments/${seg.id}/position`, {
+      fetch(`${API_BASE_URL}/api/segments/${seg.id}/position`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ position: idx }),
@@ -46,7 +47,7 @@ function App() {
 
   const saveGroupPositions = async (segmentId, newGroups) => {
     await Promise.all(newGroups.map((grp, idx) =>
-      fetch(`http://localhost:5050/api/groups/${grp.id}/position`, {
+      fetch(`${API_BASE_URL}/api/groups/${grp.id}/position`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ position: idx }),
@@ -56,7 +57,7 @@ function App() {
 
   const saveItemPositions = async (groupId, newItems) => {
     await Promise.all(newItems.map((item, idx) =>
-      fetch(`http://localhost:5050/api/items/${item.id}/position`, {
+      fetch(`${API_BASE_URL}/api/items/${item.id}/position`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ position: idx }),

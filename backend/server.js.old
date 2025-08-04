@@ -8,10 +8,6 @@ const http = require('http');
 const showsRouter = require('./src/routes/shows');
 const episodesRouter = require('./src/routes/episodes');
 const rundownRouter = require('./src/routes/rundown');
-const templatesRouter = require('./src/routes/templates');
-const segmentsRouter = require('./src/routes/segments');
-const groupsRouter = require('./src/routes/groups');
-const itemsRouter = require('./src/routes/items');
 
 // Create Express app
 const app = express();
@@ -25,10 +21,6 @@ app.use(express.urlencoded({ extended: true }));
 // Mount routes
 app.use('/api/shows', showsRouter);
 app.use('/api/episodes', episodesRouter);
-app.use('/api/templates', templatesRouter);
-app.use('/api/segments', segmentsRouter);
-app.use('/api/groups', groupsRouter);
-app.use('/api/items', itemsRouter);
 app.use('/api', rundownRouter);
 
 // WebSocket setup

@@ -1,9 +1,48 @@
 import React from "react";
 import { Droppable, Draggable } from "@hello-pangea/dnd";
+import { API_BASE_URL } from "../config";
 
-export default function ModulesPanel(props) {
+export default function ModulesPanel({ onModuleSelected }) {
+  const modules = [
+    { 
+      label: "OBS Command", 
+      icon: "🎬", 
+      id: "toolbox-obscommand",
+      type: "obscommand"
+    },
+    { 
+      label: "Graphics Template", 
+      icon: "🖼️", 
+      id: "toolbox-graphicstemplate",
+      type: "graphics" 
+    },
+    { 
+      label: "Presenter Note", 
+      icon: "📝", 
+      id: "toolbox-presenternote",
+      type: "note"
+    },
+    { 
+      label: "Video Placeholder", 
+      icon: "🎥", 
+      id: "toolbox-video",
+      type: "video"
+    },
+    { 
+      label: "Audio Placeholder", 
+      icon: "🔊", 
+      id: "toolbox-audio",
+      type: "audio"
+    }
+  ];
+
   return (
-    <div style={{ width: "100%", minHeight: 0, minWidth: 0 }}>
+    <div style={{ 
+      height: "100%",
+      overflowY: "auto",
+      padding: "10px",
+      boxSizing: "border-box"
+    }}>
       <div style={{ fontWeight: 600, color: "#1976d2", fontSize: 16, marginBottom: 10, marginLeft: 2 }}>
         Toolbox (modules panel)
       </div>
@@ -14,13 +53,7 @@ export default function ModulesPanel(props) {
             {...provided.droppableProps}
             style={{ display: "flex", flexDirection: "column", gap: 14 }}
           >
-            {[
-              { label: "OBS Command", icon: "🎬", id: "toolbox-obscommand" },
-              { label: "Graphics Template", icon: "🖼️", id: "toolbox-graphicstemplate" },
-              { label: "Presenter Note", icon: "📝", id: "toolbox-presenternote" },
-              { label: "Video Placeholder", icon: "🎥", id: "toolbox-video" },
-              { label: "Audio Placeholder", icon: "🔊", id: "toolbox-audio" },
-            ].map((item, idx) => (
+            {modules.map((item, idx) => (
               <Draggable key={item.id} draggableId={item.id} index={idx} type="item">
                 {(provided, snapshot) => (
                   <div
@@ -45,6 +78,7 @@ export default function ModulesPanel(props) {
                       ...provided.draggableProps.style,
                     }}
                     title={`Drag to add a "${item.label}"`}
+                    data-module-type={item.type}
                   >
                     <span style={{ fontSize: 22, marginRight: 6, flexShrink: 0 }}>{item.icon}</span>
                     <span>{item.label}</span>
