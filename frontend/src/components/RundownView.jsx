@@ -327,21 +327,32 @@ export default function RundownView({ showId, selectedTab }) {
   
   // --- Edit segment ---
   const handleEditSegment = (id, title) => {
+    console.log(`Editing segment ${id} with title: ${title}`);
+    
     // Don't proceed if title is null (cancel) and just clear editing state
     if (title === null) {
+      console.log("Cancelling segment edit");
       setEditingType(null);
       setEditingId(null);
       return;
     }
     
+    // First clear editing state to prevent UI glitches
+    const originalEditingType = editingType;
+    const originalEditingId = editingId;
+    
+    setEditingType(null);
+    setEditingId(null);
+    
     if (id === "new") {
       // Create new segment
       if (!title.trim()) {
         // Don't create empty segments
-        setEditingType(null);
-        setEditingId(null);
+        console.log("Empty segment title, cancelling");
         return;
       }
+      
+      console.log(`Creating new segment "${title}" in episode ${selectedEpisode.id}`);
       
       fetch(`${API_BASE_URL}/api/episodes/${selectedEpisode.id}/segments`, {
         method: "POST",
@@ -352,54 +363,91 @@ export default function RundownView({ showId, selectedTab }) {
         })
       })
         .then(res => {
-          if (!res.ok) throw new Error("Failed to create segment");
+          console.log("Create segment response status:", res.status);
+          if (!res.ok) {
+            console.error("Create segment response text:", res.statusText);
+            throw new Error("Failed to create segment");
+          }
           return res.json();
         })
-        .then(() => {
+        .then(data => {
+          console.log("Created segment:", data);
           setRefreshKey(k => k + 1);
         })
         .catch(err => {
           console.error("Error creating segment:", err);
-        })
-        .finally(() => {
-          // Always clear editing state after API call
-          setEditingType(null);
-          setEditingId(null);
+          // Restore editing state if there was an error
+          setEditingType(originalEditingType);
+          setEditingId(originalEditingId);
+          setEditingValue(title);
         });
     } else {
       // Update existing segment
+      console.log(`Updating segment ${id} with title "${title}"`);
+      
       fetch(`${API_BASE_URL}/api/segments/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title })
       })
         .then(res => {
-          if (!res.ok) throw new Error("Failed to update segment");
+          console.log("Update segment response status:", res.status);
+          if (!res.ok) {
+            console.error("Update segment response text:", res.statusText);
+            throw new Error("Failed to update segment");
+          }
           return res.json();
         })
-        .then(() => {
+        .then(data => {
+          console.log("Updated segment:", data);
+          // Update local state immediately for better UX
+          setSegments(prevSegments => 
+            prevSegments.map(segment => 
+              segment.id === id 
+                ? { ...segment, title: title } 
+                : segment
+            )
+          );
           setRefreshKey(k => k + 1);
         })
         .catch(err => {
           console.error("Error updating segment:", err);
-        })
-        .finally(() => {
-          // Always clear editing state after API call
-          setEditingType(null);
-          setEditingId(null);
+          // Restore editing state if there was an error
+          setEditingType(originalEditingType);
+          setEditingId(originalEditingId);
+          setEditingValue(title);
         });
     }
   };
   
   // --- Edit group ---
   const handleEditGroup = (segmentId, groupId, title) => {
+    console.log(`Editing group ${groupId} in segment ${segmentId} with title: ${title}`);
+    
+    if (title === null) {
+      // Cancel edit
+      console.log("Cancelling group edit");
+      setEditingType(null);
+      setEditingId(null);
+      return;
+    }
+    
+    // Store original editing state in case we need to restore it after error
+    const originalEditingType = editingType;
+    const originalEditingId = editingId;
+    
+    // Clear editing state first
+    setEditingType(null);
+    setEditingId(null);
+    
     if (groupId === "new") {
       // Create new group
-      if (!title) {
-        setEditingType(null);
-        setEditingId(null);
+      if (!title.trim()) {
+        console.log("Empty group title, cancelling");
         return;
       }
+      
+      console.log(`Creating new group "${title}" in segment ${segmentId}`);
       
       fetch(`${API_BASE_URL}/api/segments/${segmentId}/groups`, {
         method: "POST",
@@ -410,23 +458,38 @@ export default function RundownView({ showId, selectedTab }) {
         })
       })
         .then(res => {
-          if (!res.ok) throw new Error("Failed to create group");
+          console.log("Create group response status:", res.status);
+          if (!res.ok) {
+            console.error("Create group response text:", res.statusText);
+            throw new Error("Failed to create group");
+          }
           return res.json();
         })
-        .then(() => {
+        .then(data => {
+          console.log("Created group:", data);
+          // Update local state immediately for better UX
+          setSegments(prevSegments => 
+            prevSegments.map(segment => 
+              segment.id === segmentId 
+                ? { 
+                    ...segment, 
+                    groups: [...segment.groups, { ...data, expanded: true, items: [] }] 
+                  } 
+                : segment
+            )
+          );
           setRefreshKey(k => k + 1);
         })
         .catch(err => {
           console.error("Error creating group:", err);
+          // Restore editing state if there was an error
+          setEditingType(originalEditingType);
+          setEditingId(originalEditingId);
+          setEditingValue(title);
         });
     } else {
       // Update existing group
-      if (title === null) {
-        // Cancel edit
-        setEditingType(null);
-        setEditingId(null);
-        return;
-      }
+      console.log(`Updating group ${groupId} with title "${title}"`);
       
       fetch(`${API_BASE_URL}/api/groups/${groupId}`, {
         method: "PATCH",
@@ -434,19 +497,40 @@ export default function RundownView({ showId, selectedTab }) {
         body: JSON.stringify({ title })
       })
         .then(res => {
-          if (!res.ok) throw new Error("Failed to update group");
+          console.log("Update group response status:", res.status);
+          if (!res.ok) {
+            console.error("Update group response text:", res.statusText);
+            throw new Error("Failed to update group");
+          }
           return res.json();
         })
-        .then(() => {
+        .then(data => {
+          console.log("Updated group:", data);
+          // Update local state immediately for better UX
+          setSegments(prevSegments => 
+            prevSegments.map(segment => 
+              segment.id === segmentId 
+                ? { 
+                    ...segment, 
+                    groups: segment.groups.map(group => 
+                      group.id === groupId 
+                        ? { ...group, title: title } 
+                        : group
+                    )
+                  } 
+                : segment
+            )
+          );
           setRefreshKey(k => k + 1);
         })
         .catch(err => {
           console.error("Error updating group:", err);
+          // Restore editing state if there was an error
+          setEditingType(originalEditingType);
+          setEditingId(originalEditingId);
+          setEditingValue(title);
         });
     }
-    
-    setEditingType(null);
-    setEditingId(null);
   };
   
   // --- Edit item ---
@@ -578,19 +662,33 @@ export default function RundownView({ showId, selectedTab }) {
       const [_, moduleType] = draggableId.split("-");
       
       try {
-        const res = await fetch(`${API_BASE_URL}/api/items`, {
+        console.log('Creating new item:', {
+          type: moduleType,
+          group_id: groupId,
+          position: destination.index,
+          data: {}
+        });
+        
+        // Modify this URL to match your backend API endpoint structure
+        // This might be the issue - check what the correct endpoint is
+        const res = await fetch(`${API_BASE_URL}/api/groups/${groupId}/items`, { // Changed from /api/items
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             type: moduleType,
-            group_id: groupId,
             position: destination.index,
             data: {}
           })
         });
 
-        if (!res.ok) throw new Error("Failed to create item");
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error(`Failed to create item: ${res.status} ${errorText}`);
+          throw new Error("Failed to create item");
+        }
+        
         const newItem = await res.json();
+        console.log('Created new item:', newItem);
         
         // Update the local state immediately 
         setSegments(prevSegments => {
@@ -663,10 +761,13 @@ export default function RundownView({ showId, selectedTab }) {
       
       // Update in database - try a bulk update approach instead
       try {
+        console.log("Reordering items in group:", groupId);
         const updates = newItems.map((item, idx) => ({
           id: item.id,
           position: idx
         }));
+        
+        console.log("Update payload:", updates);
         
         // Use a batch update endpoint if available
         const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/reorder`, {
@@ -675,19 +776,37 @@ export default function RundownView({ showId, selectedTab }) {
           body: JSON.stringify(updates)
         });
         
+        console.log("Batch update response status:", response.status);
+        
         if (!response.ok) {
           // If batch endpoint fails, fall back to individual updates
           console.log("Batch update failed, trying individual updates");
-          await Promise.all(
+          const individualResults = await Promise.all(
             newItems.map((item, idx) => 
               fetch(`${API_BASE_URL}/api/items/${item.id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ position: idx })
               })
+              .then(res => {
+                console.log(`Item ${item.id} position update status:`, res.status);
+                return res.json();
+              })
+              .then(data => {
+                console.log(`Item ${item.id} update response:`, data);
+                return data;
+              })
             )
           );
+          
+          console.log("Individual item updates completed:", individualResults);
+        } else {
+          const data = await response.json();
+          console.log("Batch update response data:", data);
         }
+        
+        // Force a refresh to ensure UI reflects server state
+        fetchSegments(selectedEpisode.id);
       } catch (err) {
         console.error("Error updating item positions:", err);
         // If error, refetch the data to sync with server
@@ -846,16 +965,31 @@ export default function RundownView({ showId, selectedTab }) {
       
       // Update in database - use individual PATCH calls for each group
       try {
+        console.log("Reordering groups:", newGroups.map((g, idx) => ({ id: g.id, position: idx })));
+        
         // Update each group's position individually
-        await Promise.all(
+        const results = await Promise.all(
           newGroups.map((group, idx) => 
             fetch(`${API_BASE_URL}/api/groups/${group.id}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ position: idx })
             })
+            .then(res => {
+              console.log(`Group ${group.id} position update status:`, res.status);
+              return res.json();
+            })
+            .then(data => {
+              console.log(`Group ${group.id} update response:`, data);
+              return data;
+            })
           )
-          );
+        );
+        
+        console.log("All group position updates completed:", results);
+        
+        // Force a refresh to ensure UI reflects server state
+        fetchSegments(selectedEpisode.id);
       } catch (err) {
         console.error("Error updating group positions:", err);
         // On error, refresh from server to restore correct state
@@ -1011,7 +1145,7 @@ export default function RundownView({ showId, selectedTab }) {
             </div>
             
             {group.expanded && (
-              <div style={STYLES.groupContent}>
+              <div style={{ ...STYLES.groupContent, overflow: "visible" }}>
                 <Droppable 
                   droppableId={`items-${segmentId}-${group.id}`}
                   type="item"
