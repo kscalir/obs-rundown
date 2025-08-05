@@ -213,26 +213,27 @@ export default function PropertiesPanel({
     setSelectedTemplate(template);
 
     try {
-      // Update item data in database
-      const res = await fetch(`/api/items/${selectedItem.id}`, {
-        method: "PUT",
+      // Update item data in database - fix the API call structure
+      const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+        method: "PATCH", // Changed from PUT to PATCH
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: selectedItem.type,
-          data: newData,
-          group_id: selectedItem.group_id,
-          position: selectedItem.position,
+          data: newData, // Only send the data field that needs updating
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to update template");
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("Template update error:", errorText);
+        throw new Error("Failed to update template");
+      }
 
       setRefreshKey((k) => k + 1);
     } catch (err) {
       console.error("Error updating template:", err);
       setError("Failed to update template");
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -244,18 +245,19 @@ export default function PropertiesPanel({
     setTemplateData(newData);
 
     try {
-      const res = await fetch(`/api/items/${selectedItem.id}`, {
-        method: "PUT",
+      const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+        method: "PATCH", // Changed from PUT to PATCH
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: selectedItem.type,
-          data: newData,
-          group_id: selectedItem.group_id,
-          position: selectedItem.position,
+          data: newData, // Only send the data field
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to update field");
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("Field update error:", errorText);
+        throw new Error("Failed to update field");
+      }
 
       setRefreshKey((k) => k + 1);
 
@@ -286,18 +288,19 @@ export default function PropertiesPanel({
     setTemplateData(newData);
 
     try {
-      const res = await fetch(`/api/items/${selectedItem.id}`, {
-        method: "PUT",
+      const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+        method: "PATCH", // Changed from PUT to PATCH
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: selectedItem.type,
-          data: newData,
-          group_id: selectedItem.group_id,
-          position: selectedItem.position,
+          data: newData, // Only send the data field
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to update channel");
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("Channel update error:", errorText);
+        throw new Error("Failed to update channel");
+      }
 
       setRefreshKey((k) => k + 1);
     } catch (err) {
@@ -516,7 +519,7 @@ export default function PropertiesPanel({
               border: "1px solid #ddd",
               borderRadius: 4,
             }}
-            disabled={isLoading}
+            disabled={loading}
           >
             <option value="">Select a template...</option>
             {templates.map((template) => (
@@ -558,7 +561,7 @@ export default function PropertiesPanel({
               border: "1px solid #ddd",
               borderRadius: 4,
             }}
-            disabled={isLoading}
+            disabled={loading}
           >
             {[1, 2, 3, 4].map((channel) => (
               <option key={channel} value={channel}>

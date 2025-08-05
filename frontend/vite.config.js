@@ -8,17 +8,17 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:5050',
         changeOrigin: true,
         secure: false
       },
       '/templates': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:5050',
         changeOrigin: true,
         secure: false
       },
       '/media': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:5050',
         changeOrigin: true,
         secure: false
       }
