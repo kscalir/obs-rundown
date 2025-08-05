@@ -1,95 +1,130 @@
 import React from "react";
 import { Droppable, Draggable } from "@hello-pangea/dnd";
-import { API_BASE_URL } from "../config";
 
 export default function ModulesPanel({ onModuleSelected }) {
   const modules = [
     { 
       label: "OBS Command", 
       icon: "🎬", 
-      id: "toolbox-obscommand",
+      id: "obscommand",
       type: "obscommand"
     },
     { 
       label: "Graphics Template", 
       icon: "🖼️", 
-      id: "toolbox-graphicstemplate",
-      type: "graphics" 
+      id: "graphicstemplate",
+      type: "graphicstemplate"
     },
     { 
       label: "Presenter Note", 
       icon: "📝", 
-      id: "toolbox-presenternote",
-      type: "note"
+      id: "presenternote",
+      type: "presenternote"
     },
     { 
       label: "Video Placeholder", 
       icon: "🎥", 
-      id: "toolbox-video",
+      id: "video",
       type: "video"
     },
     { 
       label: "Audio Placeholder", 
       icon: "🔊", 
-      id: "toolbox-audio",
+      id: "audio",
       type: "audio"
     }
   ];
 
   return (
     <div style={{ 
-      height: "100%",
-      overflowY: "auto",
-      padding: "10px",
-      boxSizing: "border-box"
+      height: "100%", 
+      display: "flex", 
+      flexDirection: "column",
+      overflow: "hidden"
     }}>
-      <div style={{ fontWeight: 600, color: "#1976d2", fontSize: 16, marginBottom: 10, marginLeft: 2 }}>
-        Toolbox (modules panel)
+      {/* Header */}
+      <div style={{
+        padding: "10px",
+        borderBottom: "1px solid #ddd",
+        backgroundColor: "#f5f5f5",
+        fontWeight: 600,
+        fontSize: "14px",
+        flexShrink: 0
+      }}>
+        Modules Toolbox
       </div>
-      <Droppable droppableId="toolbox" isDropDisabled={false} type="item">
-        {(provided) => (
-          <div
-            ref={provided.innerRef}
-            {...provided.droppableProps}
-            style={{ display: "flex", flexDirection: "column", gap: 14 }}
-          >
-            {modules.map((item, idx) => (
-              <Draggable key={item.id} draggableId={item.id} index={idx} type="item">
-                {(provided, snapshot) => (
-                  <div
-                    ref={provided.innerRef}
-                    {...provided.draggableProps}
-                    {...provided.dragHandleProps}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      border: "1.5px solid #b1c7e7",
-                      borderRadius: 8,
-                      background: snapshot.isDragging ? "#e4f1fb" : "#fff",
-                      padding: "10px 16px",
-                      fontSize: 15.5,
-                      fontWeight: 500,
-                      color: "#223",
-                      cursor: "grab",
-                      boxShadow: snapshot.isDragging ? "0 4px 16px 0 #1976d233" : "0 2px 8px 0 #e4e8ed11",
-                      transition: "box-shadow 0.15s, background 0.15s",
-                      userSelect: "none",
-                      ...provided.draggableProps.style,
-                    }}
-                    title={`Drag to add a "${item.label}"`}
-                    data-module-type={item.type}
-                  >
-                    <span style={{ fontSize: 22, marginRight: 6, flexShrink: 0 }}>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </div>
-                )}
-              </Draggable>
-            ))}
-            {provided.placeholder}
-          </div>
-        )}
-      </Droppable>
+      
+      {/* Draggable Modules */}
+      <div style={{ 
+        flex: 1,
+        overflow: "auto",
+        padding: "5px"
+      }}>
+        <Droppable droppableId="toolbox" type="item" isDropDisabled={true}>
+          {(provided, snapshot) => (
+            <div
+              ref={provided.innerRef}
+              {...provided.droppableProps}
+              style={{
+                minHeight: "100%"
+              }}
+            >
+              {modules.map((module, index) => (
+                <Draggable
+                  key={module.id}
+                  draggableId={`toolbox-${module.type}`}
+                  index={index}
+                >
+                  {(dragProvided, dragSnapshot) => (
+                    <div
+                      ref={dragProvided.innerRef}
+                      {...dragProvided.draggableProps}
+                      {...dragProvided.dragHandleProps}
+                      style={{
+                        ...dragProvided.draggableProps.style,
+                        margin: "5px 0",
+                        padding: "8px 12px",
+                        backgroundColor: dragSnapshot.isDragging ? "#e3f2fd" : "#fff",
+                        border: "1px solid #ddd",
+                        borderRadius: "4px",
+                        cursor: "grab",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        fontSize: "14px",
+                        boxShadow: dragSnapshot.isDragging 
+                          ? "0 4px 8px rgba(0,0,0,0.2)" 
+                          : "0 1px 3px rgba(0,0,0,0.1)",
+                        transform: dragSnapshot.isDragging 
+                          ? dragProvided.draggableProps.style?.transform 
+                          : "none"
+                      }}
+                    >
+                      <span style={{ fontSize: "16px" }}>{module.icon}</span>
+                      <span>{module.label}</span>
+                    </div>
+                  )}
+                </Draggable>
+              ))}
+              {provided.placeholder}
+              
+              {/* Instructions */}
+              <div style={{
+                margin: "15px 5px 5px 5px",
+                padding: "8px",
+                fontSize: "12px",
+                color: "#666",
+                fontStyle: "italic",
+                textAlign: "center",
+                borderTop: "1px solid #eee",
+                paddingTop: "10px"
+              }}>
+                Drag modules to groups in the rundown
+              </div>
+            </div>
+          )}
+        </Droppable>
+      </div>
     </div>
   );
 }

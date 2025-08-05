@@ -9,10 +9,21 @@ router.get('/episodes/:id/segments', (req, res) => {
 
   db.serialize(() => {
     // 1. Get segments
+    const segmentQuery = `
+      SELECT 
+        id,
+        episode_id,
+        name as title,  -- Map 'name' field to 'title' for frontend
+        position,
+        created_at,
+        updated_at
+      FROM rundown_segments 
+      WHERE episode_id = ? 
+      ORDER BY position
+    `;
+
     db.all(
-      `SELECT * FROM rundown_segments 
-       WHERE episode_id = ? 
-       ORDER BY position`,
+      segmentQuery,
       [req.params.id],
       (err, segments) => {
         if (err) {
@@ -31,10 +42,21 @@ router.get('/episodes/:id/segments', (req, res) => {
         const segmentIds = segments.map(s => s.id);
         const placeholders = segmentIds.map(() => '?').join(',');
 
+        const groupQuery = `
+          SELECT 
+            id,
+            segment_id,
+            name as title,  -- Map 'name' field to 'title' for frontend
+            position,
+            created_at,
+            updated_at
+          FROM rundown_groups 
+          WHERE segment_id IN (${placeholders}) 
+          ORDER BY position
+        `;
+
         db.all(
-          `SELECT * FROM rundown_groups 
-           WHERE segment_id IN (${placeholders}) 
-           ORDER BY position`,
+          groupQuery,
           segmentIds,
           (err, groups) => {
             if (err) {
@@ -53,10 +75,24 @@ router.get('/episodes/:id/segments', (req, res) => {
             const groupIds = groups.map(g => g.id);
             const itemPlaceholders = groupIds.map(() => '?').join(',');
 
+            const itemQuery = `
+              SELECT 
+                id,
+                group_id,
+                type,
+                title,
+                data,
+                position,
+                name,
+                created_at,
+                updated_at
+              FROM rundown_items 
+              WHERE group_id IN (${itemPlaceholders}) 
+              ORDER BY position
+            `;
+
             db.all(
-              `SELECT * FROM rundown_items 
-               WHERE group_id IN (${itemPlaceholders}) 
-               ORDER BY position`,
+              itemQuery,
               groupIds,
               (err, items) => {
                 db.close();

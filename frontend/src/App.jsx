@@ -70,6 +70,7 @@ function App() {
     setSegments(segs => {
       const newSegs = segs.map(seg => seg.id === segId ? { ...seg, expanded: !seg.expanded } : seg);
       try {
+        const LOCAL_STORAGE_KEY = "obsRundownExpandState"; // Define it here
         const savedState = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || {};
         savedState.segments = savedState.segments || {};
         const toggled = newSegs.find(s => s.id === segId);
@@ -89,6 +90,7 @@ function App() {
       });
 
       try {
+        const LOCAL_STORAGE_KEY = "obsRundownExpandState"; // Define it here too
         const savedState = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || {};
         savedState.groups = savedState.groups || {};
         const seg = newSegs.find(s => s.id === segId);
@@ -104,10 +106,10 @@ function App() {
   };
 
   const addSegment = async () => {
-    if (!episode) return;
+    if (!show) return; // Change from 'episode' to 'show'
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:5050/api/episodes/${episode.id}/segments`, {
+      const res = await fetch(`http://localhost:5050/api/episodes/${show.id}/segments`, { // Change from 'episode.id' to 'show.id'
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: `Segment ${segments.length + 1}` }),
@@ -259,42 +261,46 @@ function App() {
   };
 
   return (
-    <div style={{ height: "100vh", width: "100vw", overflow: "hidden", boxSizing: "border-box" }}>
-      <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden" }}>
-        {/* Left panel: ShowsPanel */}
-        <div style={{ width: 250, minWidth: 250, maxWidth: 250, borderRight: "1px solid #ccc", padding: 10 }}>
-          <ShowsPanel show={show} setShow={setShow} />
-        </div>
-        {/* Main content panel */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {show && (
-            <MainPanel
-              showId={show.id}
-              segments={segments}
-              loading={loading}
-              mediaError={mediaError}
-              editingType={editingType}
-              editingId={editingId}
-              editingValue={editingValue}
-              inputRef={inputRef}
-              toggleSegment={toggleSegment}
-              toggleGroup={toggleGroup}
-              addSegment={addSegment}
-              addGroup={addGroup}
-              addItem={addItem}
-              deleteSegment={deleteSegment}
-              deleteGroup={deleteGroup}
-              deleteItem={deleteItem}
-              handleEditStart={handleEditStart}
-              handleEditChange={handleEditChange}
-              handleEditCancel={handleEditCancel}
-              handleEditSave={handleEditSave}
-            />
-          )}
-        </div>
-        {/* Spacer */}
-        <div style={{ width: 28, minWidth: 28, maxWidth: 28, background: "transparent" }} />
+    <div style={{ 
+      display: "flex", 
+      height: "100vh", 
+      width: "100vw", 
+      overflow: "hidden",
+      boxSizing: "border-box" 
+    }}>
+      {/* Left panel: ShowsPanel */}
+      <div style={{ width: 250, minWidth: 250, maxWidth: 250, borderRight: "1px solid #ccc", padding: 10 }}>
+        <ShowsPanel show={show} setShow={setShow} />
       </div>
+      {/* Main content panel */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {show && (
+          <MainPanel
+            showId={show.id}
+            segments={segments}
+            loading={loading}
+            mediaError={mediaError}
+            editingType={editingType}
+            editingId={editingId}
+            editingValue={editingValue}
+            inputRef={inputRef}
+            toggleSegment={toggleSegment}
+            toggleGroup={toggleGroup}
+            addSegment={addSegment}
+            addGroup={addGroup}
+            addItem={addItem}
+            deleteSegment={deleteSegment}
+            deleteGroup={deleteGroup}
+            deleteItem={deleteItem}
+            handleEditStart={handleEditStart}
+            handleEditChange={handleEditChange}
+            handleEditCancel={handleEditCancel}
+            handleEditSave={handleEditSave}
+          />
+        )}
+      </div>
+      {/* Spacer */}
+      <div style={{ width: 28, minWidth: 28, maxWidth: 28, background: "transparent" }} />
     </div>
   );
 }

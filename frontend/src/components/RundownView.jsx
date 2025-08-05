@@ -105,7 +105,7 @@ const STYLES = {
   },
   groupContent: {
     padding: "8px",
-    overflow: "visible" // Change from any scroll value to visible
+    overflow: "visible"
   },
   
   // Item styles
@@ -113,7 +113,8 @@ const STYLES = {
     listStyle: "none",
     padding: 0,
     margin: 0,
-    overflow: "visible" // Add this to prevent scroll conflicts
+    minHeight: "20px",
+    overflow: "visible"
   },
   itemContainer: {
     padding: "8px 12px",
@@ -142,6 +143,22 @@ const STYLES = {
   },
   dragging: {
     opacity: 0.5
+  },
+  
+  // Container styles - FIXED
+  container: {
+    height: "100vh",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden"
+  },
+  scrollableContent: {
+    flex: 1,
+    overflowY: "auto",
+    overflowX: "hidden", 
+    padding: "10px",
+    minHeight: 0, // This is crucial for flex scrolling
+    
   }
 };
 
@@ -653,13 +670,8 @@ export default function RundownView({ showId, selectedTab }) {
   const handleItemClick = (item) => {
     console.log('Item clicked:', item);
     if (item && item.id) {
-      // Check item type more carefully
-      const itemType = item.type || '';
-      if (itemType === 'graphics' || itemType === 'graphicstemplate' || 
-          itemType.includes('graphics')) {
-        setSelectedItem(item.id);
-        setShowProperties(true);
-      }
+      setSelectedItem(item.id);
+      setShowProperties(true);
     }
   };
   
@@ -674,6 +686,10 @@ export default function RundownView({ showId, selectedTab }) {
   
   // --- Handle drag end ---
   const handleDragEnd = async (result) => {
+     console.log("handleDragEnd called with:", result);
+  console.log("source:", result.source);
+  console.log("destination:", result.destination);
+  console.log("draggableId:", result.draggableId);
     setDraggedModule(null);
     const { source, destination, draggableId, type } = result;
 
@@ -681,19 +697,23 @@ export default function RundownView({ showId, selectedTab }) {
 
     // --- Handle item drag from toolbox to rundown ---
     if (source.droppableId === "toolbox" && destination.droppableId.startsWith("items-")) {
-      const [prefix, segmentId, groupId] = destination.droppableId.split("-");
-      const [_, moduleType] = draggableId.split("-");
+      const [itemPrefix, moduleId] = draggableId.split("-", 2);
+      const moduleType = moduleId;
+      
+      // Extract segmentId and groupId from destination droppableId
+      const [_, segmentId, groupId] = destination.droppableId.split("-");
+      
+      console.log("Adding new item:", { moduleType, segmentId, groupId, draggableId });
       
       try {
         console.log('Creating new item:', {
           type: moduleType,
-          group_id: groupId,
+          group_id: parseInt(groupId),
           position: destination.index,
+          title: `New ${moduleType}`,
           data: {}
         });
         
-        // Modify this URL to match your backend API endpoint structure
-        // This might be the issue - check what the correct endpoint is
         const res = await fetch(`${API_BASE_URL}/api/items`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -701,6 +721,7 @@ export default function RundownView({ showId, selectedTab }) {
             type: moduleType,
             group_id: parseInt(groupId),
             position: destination.index,
+            title: `New ${moduleType}`,
             data: {}
           })
         });
@@ -714,14 +735,23 @@ export default function RundownView({ showId, selectedTab }) {
         const newItem = await res.json();
         console.log('Created new item:', newItem);
         
+        // Parse the data field if it's a string
+        if (newItem.data && typeof newItem.data === 'string') {
+          try {
+            newItem.data = JSON.parse(newItem.data);
+          } catch (e) {
+            newItem.data = {};
+          }
+        }
+        
         // Update the local state immediately 
         setSegments(prevSegments => {
           return prevSegments.map(seg => {
-            if (seg.id === segmentId) {
+            if (seg.id === parseInt(segmentId)) {
               return {
                 ...seg,
                 groups: seg.groups.map(g => {
-                  if (g.id === groupId) {
+                  if (g.id === parseInt(groupId)) {
                     const updatedItems = [...g.items];
                     updatedItems.splice(destination.index, 0, newItem);
                     return { ...g, items: updatedItems };
@@ -735,7 +765,7 @@ export default function RundownView({ showId, selectedTab }) {
         });
         
         if (moduleType === "graphicstemplate") {
-          setSelectedItem(newItem.id);
+          setSelectedItem(newItem.id); // Fix: use newItem.id instead of newItem
           setShowProperties(true);
         }
         
@@ -750,9 +780,9 @@ export default function RundownView({ showId, selectedTab }) {
         source.droppableId.startsWith("items-")) {
       const [_, segmentId, groupId] = source.droppableId.split("-");
       
-      // Find the group
-      const segment = segments.find(s => s.id === segmentId);
-      const group = segment?.groups.find(g => g.id === groupId);
+      // Find the group - use == instead of ===
+      const segment = segments.find(s => s.id == segmentId); // Change === to ==
+      const group = segment?.groups.find(g => g.id == groupId); // Change === to ==
       if (!group) return;
       
       // Create new array with item moved to new position
@@ -763,11 +793,11 @@ export default function RundownView({ showId, selectedTab }) {
       // Update the state immediately
       setSegments(prevSegments => {
         return prevSegments.map(seg => {
-          if (seg.id === segmentId) {
+          if (seg.id == segmentId) { // Change === to ==
             return {
               ...seg,
               groups: seg.groups.map(g => {
-                if (g.id === groupId) {
+                if (g.id == groupId) { // Change === to ==
                   return { ...g, items: newItems };
                 }
                 return g;
@@ -833,10 +863,10 @@ export default function RundownView({ showId, selectedTab }) {
       const [itemPrefix, itemId] = draggableId.split("-");
       
       // Find source and destination segments/groups
-      const srcSegment = segments.find(s => s.id === srcSegmentId);
-      const destSegment = segments.find(s => s.id === destSegmentId);
-      const srcGroup = srcSegment?.groups.find(g => g.id === srcGroupId);
-      const destGroup = destSegment?.groups.find(g => g.id === destGroupId);
+      const srcSegment = segments.find(s => s.id == srcSegmentId);
+      const destSegment = segments.find(s => s.id == destSegmentId);
+      const srcGroup = srcSegment?.groups.find(g => g.id == srcGroupId);
+      const destGroup = destSegment?.groups.find(g => g.id == destGroupId);
       
       if (!srcGroup || !destGroup) return;
       
@@ -853,22 +883,37 @@ export default function RundownView({ showId, selectedTab }) {
       // Update the state immediately
       setSegments(prevSegments => {
         return prevSegments.map(seg => {
-          if (seg.id === srcSegmentId) {
+          if (seg.id == srcSegmentId && seg.id == destSegmentId) {
+            // Both groups are in the same segment - handle both updates together
             return {
               ...seg,
               groups: seg.groups.map(g => {
-                if (g.id === srcGroupId) {
+                if (g.id == srcGroupId) {
+                  return { ...g, items: srcItems };
+                }
+                if (g.id == destGroupId) {
+                  return { ...g, items: destItems };
+                }
+                return g;
+              })
+            };
+          } else if (seg.id == srcSegmentId) {
+            // Only source segment
+            return {
+              ...seg,
+              groups: seg.groups.map(g => {
+                if (g.id == srcGroupId) {
                   return { ...g, items: srcItems };
                 }
                 return g;
               })
             };
-          }
-          if (seg.id === destSegmentId) {
+          } else if (seg.id == destSegmentId) {
+            // Only destination segment
             return {
               ...seg,
               groups: seg.groups.map(g => {
-                if (g.id === destGroupId) {
+                if (g.id == destGroupId) {
                   return { ...g, items: destItems };
                 }
                 return g;
@@ -879,17 +924,28 @@ export default function RundownView({ showId, selectedTab }) {
         });
       });
       
-      // Update in database
+      // Update in database using PATCH instead of the non-existent /move endpoint
       try {
-        // Move the item to the new group and position
-        await fetch(`${API_BASE_URL}/api/items/${item.id}/move`, {
-          method: "PUT",
+        console.log(`Moving item ${item.id} from group ${srcGroupId} to group ${destGroupId} at position ${destination.index}`);
+        
+        const response = await fetch(`${API_BASE_URL}/api/items/${item.id}`, {
+          method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            group_id: destGroupId,
+            group_id: parseInt(destGroupId),
             position: destination.index
           })
         });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`Item move error:`, errorText);
+          throw new Error(`Failed to move item: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log(`Item move response:`, data);
+        
       } catch (err) {
         console.error("Error moving item:", err);
         // On error, refresh from server
@@ -951,7 +1007,7 @@ export default function RundownView({ showId, selectedTab }) {
         destination.droppableId === source.droppableId) {
       
       const segmentId = source.droppableId.split("-")[1];
-      const segment = segments.find(s => s.id === segmentId);
+      const segment = segments.find(s => s.id == segmentId); // Change === to ==
       if (!segment) return;
       
       // Create a new array with reordered groups
@@ -962,7 +1018,7 @@ export default function RundownView({ showId, selectedTab }) {
       // Update state immediately
       setSegments(prevSegments => 
         prevSegments.map(seg => 
-          seg.id === segmentId 
+          seg.id == segmentId  // Change === to ==
             ? { ...seg, groups: newGroups }
             : seg
         )
@@ -1006,19 +1062,101 @@ export default function RundownView({ showId, selectedTab }) {
       }
       return;
     }
+
+    // --- Handle group moving between segments ---
+    if (type === "group" && 
+        source.droppableId.startsWith("groups-") && 
+        destination.droppableId.startsWith("groups-") && 
+        source.droppableId !== destination.droppableId) {
+      
+      const srcSegmentId = source.droppableId.split("-")[1];
+      const destSegmentId = destination.droppableId.split("-")[1];
+      
+      const srcSegment = segments.find(s => s.id == srcSegmentId);
+      const destSegment = segments.find(s => s.id == destSegmentId);
+      
+      if (!srcSegment || !destSegment) return;
+      
+      // Get the group being moved
+      const group = srcSegment.groups[source.index];
+      
+      // Create new arrays for both segments
+      const srcGroups = [...srcSegment.groups];
+      srcGroups.splice(source.index, 1);
+      
+      const destGroups = [...destSegment.groups];
+      destGroups.splice(destination.index, 0, group);
+      
+      // Update state immediately
+      setSegments(prevSegments => 
+        prevSegments.map(seg => {
+          if (seg.id == srcSegmentId) {
+            return { ...seg, groups: srcGroups };
+          }
+          if (seg.id == destSegmentId) {
+            return { ...seg, groups: destGroups };
+          }
+          return seg;
+        })
+      );
+      
+      // Update in database
+      try {
+        console.log(`Moving group ${group.id} from segment ${srcSegmentId} to segment ${destSegmentId} at position ${destination.index}`);
+        
+        const response = await fetch(`${API_BASE_URL}/api/groups/${group.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            segment_id: parseInt(destSegmentId),
+            position: destination.index 
+          })
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`Group move error:`, errorText);
+          throw new Error(`Failed to move group: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log(`Group move response:`, data);
+        
+      } catch (err) {
+        console.error("Error moving group:", err);
+        // On error, refresh from server to restore correct state
+        if (selectedEpisode) {
+          fetchSegments(selectedEpisode.id);
+        }
+      }
+      return;
+    }
   };
+// Find the selected item from the segments state
+const getSelectedItem = () => {
+  if (!selectedItem) return null;
+  
+  for (const segment of segments) {
+    for (const group of segment.groups || []) {
+      const item = (group.items || []).find(item => item.id === selectedItem);
+      if (item) return item;
+    }
+  }
+  return null;
+};
 
   // --- Render item component (from RundownList) ---
   const renderItem = (item, dragProvided) => {
     const getItemIcon = (type) => {
       switch (type) {
         case "graphics":
+        case "graphicstemplate":
         case "toolbox-graphicstemplate":
           return "🖼️";
         case "obscommand":
         case "toolbox-obscommand":
           return "🎬";
-        case "note":
+        case "presenternote":
         case "toolbox-presenternote":
           return "📝";
         case "video":
@@ -1046,39 +1184,16 @@ export default function RundownView({ showId, selectedTab }) {
           cursor: "pointer"
         }}
       >
-        {editingType === "item" && editingId === item.id ? (
-          <input
-            ref={inputRef}
-            value={editingValue}
-            onChange={e => setEditingValue(e.target.value)}
-            onBlur={() => handleEditItem(item.id, editingValue)}
-            onKeyDown={e => {
-              if (e.key === "Enter") handleEditItem(item.id, editingValue);
-              if (e.key === "Escape") handleEditItem(item.id, null);
-            }}
-            style={STYLES.editInput}
-            autoFocus
-            onClick={e => e.stopPropagation()} // Prevent item selection when editing
-          />
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
-            <span style={{ fontSize: "1.2em" }}>{getItemIcon(item.type)}</span>
-            <span 
-              style={{ flex: 1 }}
-              onClick={e => {
-                e.stopPropagation(); // Prevent item selection when editing title
-                setEditingType("item");
-                setEditingId(item.id);
-                setEditingValue(item.title || "");
-              }}
-            >
-              {item.title || item.data?.title || "Untitled Item"}
-            </span>
-          </div>
-        )}
+        {/* Remove all the editing logic - just show the item */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
+          <span style={{ fontSize: "1.2em" }}>{getItemIcon(item.type)}</span>
+          <span style={{ flex: 1 }}>
+            {item.title || item.data?.title || "Untitled Item"}
+          </span>
+        </div>
         <button
           onClick={e => {
-            e.stopPropagation(); // Prevent item selection when deleting
+            e.stopPropagation();
             handleDeleteItem(item.id);
           }}
           style={STYLES.deleteButton}
@@ -1323,337 +1438,208 @@ export default function RundownView({ showId, selectedTab }) {
 
   // --- Main render ---
   return (
-    <DragDropContext 
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-    >
-      <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
-        {/* Middle: Rundown List */}
+    <DragDropContext onDragEnd={handleDragEnd} onDragStart={handleDragStart}>
+    <div style={{ 
+      display: "flex", 
+      height: "100vh", 
+      overflow: "hidden"
+    }}>
+      {/* Left Panel - Rundown */}
+      <div style={{ 
+        flex: 1, 
+        display: "flex", 
+        flexDirection: "column",
+        overflow: "hidden"
+      }}>
+        {/* Episode Selection Header */}
         <div style={{ 
-          flex: 1, 
-          overflowY: "auto", 
-          padding: "0 20px 20px 20px",
-          borderRight: "1px solid #ddd" 
+          padding: "10px 15px", 
+          borderBottom: "1px solid #ddd",
+          backgroundColor: "#f5f5f5",
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          flexShrink: 0
         }}>
-          {/* Episode selector */}
-          <div style={{ 
-            display: "flex", 
-            alignItems: "center", 
-            padding: "10px 0", 
-            position: "sticky",
-            top: 0,
-            backgroundColor: "#f5f5f5",
-            zIndex: 10,
-            marginBottom: "10px"
-          }}>
-            {/* Existing episode selector code */}
-            <select 
-              value={selectedEpisode?.id || ""}
-              onChange={(e) => {
-                const episodeId = e.target.value;
-                const episode = episodes.find(ep => ep.id === parseInt(episodeId));
-                setSelectedEpisode(episode || null);
-              }}
-              style={{
-                padding: "8px",
-                borderRadius: "4px",
-                border: "1px solid #ccc",
-                marginRight: "10px"
-              }}
-              disabled={loading || episodes.length === 0}
-            >
-              {episodes.length > 0 ? (
-                episodes.map(episode => (
-                  <option key={episode.id} value={episode.id}>
-                    {episode.title || `Episode ${episode.id}`}
-                  </option>
-                ))
-              ) : (
-                <option value="">No Episodes</option>
-              )}
-            </select>
-            
-            {/* Add segment button */}
-            <button
-              onClick={addSegment}
-              disabled={!selectedEpisode}
-              style={{
-                backgroundColor: "#4CAF50",
-                color: "white",
-                border: "none",
-                padding: "8px 12px",
-                borderRadius: "4px",
-                cursor: !selectedEpisode ? "not-allowed" : "pointer"
-              }}
-            >
-              + Segment
-            </button>
-            
-            {/* Add episode button */}
-            <button
-              onClick={() => setShowAddEpisodeModal(true)}
-              style={{
-                backgroundColor: "#2196F3",
-                color: "white",
-                border: "none",
-                padding: "8px 12px",
-                borderRadius: "4px",
-                cursor: "pointer",
-                marginLeft: "10px"
-              }}
-            >
-              + Episode
-            </button>
-            
-            {/* Refresh button */}
-            <button 
-              onClick={() => {
-                if (selectedEpisode?.id) {
-                  fetchSegments(selectedEpisode.id);
-                }
-              }}
-              disabled={!selectedEpisode || loading}
-              style={{
-                marginLeft: "auto",
-                backgroundColor: "transparent",
-                border: "1px solid #ccc",
-                padding: "8px 12px",
-                borderRadius: "4px",
-                cursor: !selectedEpisode || loading ? "not-allowed" : "pointer"
-              }}
-            >
-              🔄 Refresh
-            </button>
-          </div>
+          <label style={{ fontWeight: 600, color: "#333" }}>Episode:</label>
+          <select
+            value={selectedEpisode?.id || ""}
+            onChange={(e) => {
+              const episode = episodes.find(ep => ep.id === parseInt(e.target.value));
+              if (episode) {
+                setSelectedEpisode(episode);
+              }
+            }}
+            style={{
+              padding: "5px 10px",
+              border: "1px solid #ccc",
+              borderRadius: "4px",
+              minWidth: "200px"
+            }}
+            disabled={loading}
+          >
+            <option value="">Select an episode...</option>
+            {episodes.map(episode => (
+              <option key={episode.id} value={episode.id}>
+                {episode.name}
+              </option>
+            ))}
+          </select>
           
-          {/* New segment input */}
-          {editingType === "segment" && editingId === "new" && (
-            <div style={{ margin: "10px 0" }}>
-              <input
-                ref={inputRef}
-                value={editingValue}
-                onChange={e => setEditingValue(e.target.value)}
-                onBlur={() => handleEditSegment("new", editingValue)}
-                onKeyDown={e => {
-                  if (e.key === "Enter") handleEditSegment("new", editingValue);
-                  if (e.key === "Escape") handleEditSegment("new", null);
-                }}
-                style={{
-                  ...STYLES.editInput,
-                  fontSize: "1.2em",
-                  padding: "10px",
-                  width: "100%"
-                }}
-                autoFocus
-              />
-            </div>
-          )}
-          
-          {/* Loading state */}
-          {loading && (
-            <div style={{ textAlign: "center", padding: "20px" }}>
+          <button
+            onClick={addSegment}
+            style={{
+              marginLeft: "auto",
+              padding: "6px 12px",
+              backgroundColor: "#1976d2",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontWeight: 500
+            }}
+            disabled={!selectedEpisode}
+          >
+            + Segment
+          </button>
+        </div>
+
+        {/* Rundown Content */}
+        <div style={{
+          flex: 1,
+          overflow: "auto", 
+          padding: "5px 5px 20px 5px",
+          maxHeight: "calc(100vh - 100px)",
+          height: "calc(100vh - 100px)"
+        }}>
+          {loading ? (
+            <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
               Loading...
             </div>
-          )}
-          
-          {/* Segments list */}
-          <Droppable droppableId="rundown" type="segment">
-            {(dropProvided, dropSnapshot) => (
-              <div
-                ref={dropProvided.innerRef}
-                {...dropProvided.droppableProps}
-                style={{
-                  minHeight: "100px",
-                  ...(dropSnapshot.isDraggingOver ? STYLES.draggingOver : {})
-                }}
-              >
-                {segments.map((segment, idx) => renderSegment(segment, idx))}
-                {dropProvided.placeholder}
-              </div>
-            )}
-          </Droppable>
-          
-          {/* Empty state */}
-          {!loading && segments.length === 0 && (
-            <div style={{ 
-              textAlign: "center", 
-              padding: "40px", 
-              color: "#888" 
-            }}>
-              {selectedEpisode ? (
-                <div>
-                  <p>No segments in this episode.</p>
-                  <p>Click "+ Segment" to add one.</p>
-                </div>
-              ) : (
-                <div>
-                  <p>Select an episode to view its rundown</p>
-                  <p>or create a new episode.</p>
+          ) : !selectedEpisode ? (
+            <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
+              Please select an episode to view the rundown
+            </div>
+          ) : (
+            <>
+              {/* New Segment Input */}
+              {editingType === "segment" && editingId === "new" && (
+                <div style={{ margin: "10px 0" }}>
+                  <input
+                    ref={inputRef}
+                    value={editingValue}
+                    onChange={e => setEditingValue(e.target.value)}
+                    onBlur={() => handleEditSegment("new", editingValue)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") handleEditSegment("new", editingValue);
+                      if (e.key === "Escape") handleEditSegment("new", null);
+                    }}
+                    style={{
+                      ...STYLES.editInput,
+                      width: "100%",
+                      padding: "10px",
+                      fontSize: "16px",
+                      fontWeight: 600
+                    }}
+                    placeholder="Enter segment name..."
+                    autoFocus
+                  />
                 </div>
               )}
-            </div>
+
+              {/* Segments List */}
+            
+
+<Droppable droppableId="segments" type="segment">
+  {(provided, snapshot) => (
+    <div
+      ref={provided.innerRef}
+      {...provided.droppableProps}
+      style={{
+        minHeight: "50px",
+        ...(snapshot.isDraggingOver ? STYLES.draggingOver : {})
+      }}
+    >
+      {segments.map((segment, index) => renderSegment(segment, index))}
+      {provided.placeholder}
+      
+      {segments.length === 0 && !editingType && (
+        <div style={{
+          ...STYLES.placeholder,
+          padding: "40px 20px",
+          fontSize: "16px"
+        }}>
+          No segments in this episode. Click "+ Segment" to add one.
+        </div>
+      )}
+    </div>
+  )}
+</Droppable>
+            </>
           )}
         </div>
-        
-        {/* Right side: Properties and Modules panels */}
-        <div style={{ width: "300px", flexShrink: 0, display: "flex", flexDirection: "column", height: "100%" }}>
-          {/* Properties panel */}
-          <div style={{ flex: "1 1 50%", overflow: "auto", borderBottom: "1px solid #ddd" }}>
-            <PropertiesPanel
-              showId={showId}
-              selectedEpisode={selectedEpisode}
-              segments={segments}
-              loading={loading}
-              mediaError={mediaError}
-              editingType={editingType}
-              editingId={editingId}
-              editingValue={editingValue}
-              inputRef={inputRef}
-              toggleSegment={toggleSegment}
-              toggleGroup={toggleGroup}
-              addSegment={addSegment}
-              addGroup={addGroup}
-              setEditingType={setEditingType}
-              setEditingId={setEditingId}
-              setEditingValue={setEditingValue}
-              setRefreshKey={setRefreshKey}
-              selectedTab={internalSelectedTab}
-              setSelectedTab={setInternalSelectedTab}
-              show={showProperties}
-              itemId={selectedItem}
-              onClose={() => setShowProperties(false)}
-            />
-          </div>
-          
-          {/* Modules panel */}
-          <div style={{ flex: "1 1 50%", overflow: "auto" }}>
-            <ModulesPanel 
-              draggedModule={draggedModule} 
-              setDraggedModule={setDraggedModule}
-            />
-          </div>
-        </div>
-        
-        {/* Add episode modal */}
-        {showAddEpisodeModal && (
-          <div style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100
-          }}>
-            {/* Modal content */}
-            <div style={{
-              backgroundColor: "white",
-              padding: "20px",
-              borderRadius: "5px",
-              width: "400px",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.2)"
-            }}>
-              <h3>Add New Episode</h3>
-              <input
-                type="text"
-                value={newEpisodeName}
-                onChange={e => setNewEpisodeName(e.target.value)}
-                placeholder="Episode Name"
-                style={{
-                  width: "100%",
-                  padding: "8px",
-                  marginBottom: "15px",
-                  borderRadius: "4px",
-                  border: "1px solid #ccc"
-                }}
-                autoFocus
-              />
-              <div style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "10px"
-              }}>
-                <button
-                  onClick={() => {
-                    setShowAddEpisodeModal(false);
-                    setNewEpisodeName("");
-                  }}
-                  style={{
-                    padding: "8px 12px",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                    backgroundColor: "white"
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    if (!newEpisodeName.trim()) return;
-                    
-                    fetch(`${API_BASE_URL}/api/shows/${showId}/episodes`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ title: newEpisodeName })
-                    })
-                      .then(res => {
-                        if (!res.ok) throw new Error("Failed to create episode");
-                        return res.json();
-                      })
-                      .then(newEpisode => {
-                        setEpisodes(prev => [...prev, newEpisode]);
-                        setSelectedEpisode(newEpisode);
-                        setShowAddEpisodeModal(false);
-                        setNewEpisodeName("");
-                      })
-                      .catch(err => {
-                        console.error("Error creating episode:", err);
-                        alert("Failed to create episode");
-                      });
-                  }}
-                  disabled={!newEpisodeName.trim()}
-                  style={{
-                    padding: "8px 12px",
-                    border: "none",
-                    borderRadius: "4px",
-                    backgroundColor: "#4CAF50",
-                    color: "white",
-                    cursor: newEpisodeName.trim() ? "pointer" : "not-allowed"
-                  }}
-                >
-                  Create
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Right Panel - Properties + Modules */}
+      <div style={{ 
+        width: "300px", 
+        borderLeft: "1px solid #ddd",
+        backgroundColor: "#f9f9f9",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        flexShrink: 0
+      }}>
+        {/* Properties Panel - Top Half */}
+        <div style={{
+          flex: "0 0 50%",
+          borderBottom: "1px solid #ddd",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column"
+        }}>
+          {console.log("Rendering PropertiesPanel")}
+          <PropertiesPanel
+  showId={showId}
+  selectedEpisode={selectedEpisode}
+  segments={segments}
+  loading={loading}
+  mediaError={mediaError}
+  editingType={editingType}
+  editingId={editingId}
+  editingValue={editingValue}
+  inputRef={inputRef}
+  toggleSegment={toggleSegment}
+  toggleGroup={toggleGroup}
+  addSegment={addSegment}
+  addGroup={addGroup}
+  setEditingType={setEditingType}
+  setEditingId={setEditingId}
+  setEditingValue={setEditingValue}
+  setRefreshKey={setRefreshKey}
+  selectedTab={internalSelectedTab}
+  setSelectedTab={setInternalSelectedTab}
+  itemId={selectedItem}
+  itemData={getSelectedItem()} // Add this line
+  onClose={() => {
+    setSelectedItem(null);
+    setShowProperties(false);
+  }}
+/>
+        </div>
+
+        {/* Modules Panel - Bottom Half */}
+        <div style={{
+          flex: "0 0 50%",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column"
+        }}>
+          {console.log("Rendering ModulesPanel")}
+          <ModulesPanel onModuleSelected={setDraggedModule} />
+        </div>
+      </div>
+    </div>
     </DragDropContext>
   );
 }
-
-// Add this helper function at the top of your component:
-const makeApiCall = async (url, options) => {
-  console.log(`API Call: ${options.method || 'GET'} ${url}`, options.body ? JSON.parse(options.body) : '');
-  
-  try {
-    const response = await fetch(url, options);
-    console.log(`API Response: ${response.status} ${response.statusText}`);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`API Error: ${errorText}`);
-      throw new Error(`${response.status}: ${errorText}`);
-    }
-    
-    const data = await response.json();
-    console.log(`API Data:`, data);
-    return data;
-  } catch (error) {
-    console.error(`API Call Failed:`, error);
-    throw error;
-  }
-};

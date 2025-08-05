@@ -24,6 +24,7 @@ export default function PropertiesPanel({
   setSelectedTab,
   show,
   itemId,
+  itemData,
   onClose
 }) {
   const [item, setItem] = useState(null);
@@ -38,28 +39,8 @@ export default function PropertiesPanel({
   const [itemLoading, setItemLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
-  // Fetch item data when itemId changes
-  useEffect(() => {
-    if (!itemId) {
-      setItem(null);
-      return;
-    }
-    
-    setItemLoading(true);
-    fetch(`${API_BASE_URL}/api/items/${itemId}`)
-      .then(res => {
-        if (!res.ok) throw new Error("Failed to fetch item");
-        return res.json();
-      })
-      .then(data => {
-        setItem(data);
-        setItemLoading(false);
-      })
-      .catch(err => {
-        console.error("Error fetching item:", err);
-        setItemLoading(false);
-      });
-  }, [itemId]);
+  // Handle other item types...
+
 
   // Find selected item
   useEffect(() => {
@@ -183,6 +164,7 @@ export default function PropertiesPanel({
         }
       });
   };
+
 
   // Handle template selection
   const handleTemplateChange = async (e) => {
@@ -788,6 +770,74 @@ export default function PropertiesPanel({
       </div>
     );
   };
+
+// Fetch item data when itemId changes
+  
+ if (!itemId || !itemData) {
+    return (
+      <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
+        Select an item to view its properties
+      </div>
+    );
+  }
+
+  if (itemData.type === 'graphicstemplate' || itemData.type === 'toolbox-graphicstemplate') {
+  return (
+    <div style={{ padding: "15px" }}>
+      <h3 style={{ marginTop: 0, fontSize: 18, color: "#1976d2" }}>
+        Graphics Template Properties
+      </h3>
+      
+      {/* Title Field */}
+      <div style={{ marginBottom: 20 }}>
+        <label style={{ fontWeight: 500, display: "block", marginBottom: 4 }}>
+          Title:
+        </label>
+        <input 
+          type="text"
+          value={itemData.title || ""} 
+          onChange={async (e) => {
+            const newTitle = e.target.value;
+            
+            try {
+              // Update the item title in the database
+              const res = await fetch(`${API_BASE_URL}/api/items/${itemData.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  title: newTitle
+                }),
+              });
+
+              if (!res.ok) {
+                throw new Error("Failed to update title");
+              }
+
+              // Trigger a refresh of the rundown to show the updated title
+              setRefreshKey((k) => k + 1);
+              
+            } catch (err) {
+              console.error("Error updating title:", err);
+              setError("Failed to update title");
+            }
+          }}
+          style={{
+            width: "100%",
+            padding: "8px",
+            border: "1px solid #ddd",
+            borderRadius: "4px",
+            fontSize: "14px"
+          }}
+          placeholder="Enter title for this graphics template"
+        />
+      </div>
+
+      {/* Use the full graphics template editor */}
+      {renderGraphicsTemplateEditor()}
+    </div>
+  );
+}
+
 
   // Main render
   if (!selectedItem) {

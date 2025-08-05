@@ -10,7 +10,7 @@ const LOCAL_STORAGE_TAB_STATE_KEY = "obsRundownTabState";
 const STYLES = {
   container: {
     minWidth: 0,
-    height: "100vh",
+    height: "100%",
     display: "flex",
     flexDirection: "column"
   },
