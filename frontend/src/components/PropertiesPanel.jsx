@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { API_BASE_URL } from '../config';
 
-
 export default function PropertiesPanel({
   showId,
   selectedEpisode,
@@ -27,58 +26,28 @@ export default function PropertiesPanel({
   itemData,
   onClose
 }) {
-  const [item, setItem] = useState(null);
+  // STATE HOOKS (ALL AT THE TOP)
+  const [selectedItem, setSelectedItem] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [templateData, setTemplateData] = useState({});
+  const [localTemplateData, setLocalTemplateData] = useState({});
   const [selectedChannel, setSelectedChannel] = useState(1);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [isloading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showPreviewPopup, setShowPreviewPopup] = useState(false);
   const previewRef = useRef(null);
-  const [itemLoading, setItemLoading] = useState(false);
-  const [selectedItem, setSelectedItem] = useState(null);
 
-  // Handle other item types...
-
-
-  // Find selected item
+  // EFFECT HOOKS (ALL AFTER STATE HOOKS)
+  
+  // Find selected item from segments
   useEffect(() => {
-    if (!segments || !editingId) {
+    if (!itemId) {
       setSelectedItem(null);
       return;
     }
 
-    let found = null;
-    segments.forEach((segment) => {
-      if (found) return;
-      (segment.groups || []).forEach((group) => {
-        if (found) return;
-        const item = (group.items || []).find((item) => item.id === editingId);
-        if (item) found = item;
-      });
-    });
-
-    setSelectedItem(found);
-    if (found?.data) {
-      setTemplateData(found.data);
-      if (found.data.templateId) {
-        fetchTemplateDetails(found.data.templateId);
-      }
-      if (found.data.channel) {
-        setSelectedChannel(found.data.channel);
-      }
-    }
-  }, [segments, editingId]);
-
-  // Alternative approach: use item directly instead of selectedItem
-  useEffect(() => {
-    if (!itemId) return;
-    
-    // If we already loaded the item from the API call, use that
-    if (item && item.id === itemId) return;
-    
-    // Otherwise find it in segments if possible
     if (segments) {
       let found = null;
       segments.forEach((segment) => {
@@ -92,36 +61,38 @@ export default function PropertiesPanel({
       
       if (found) {
         setSelectedItem(found);
-        setItem(found); // Update the API-loaded item too
+        if (found.data) {
+          setTemplateData(found.data);
+          setLocalTemplateData(found.data);
+          if (found.data.templateId) {
+            fetchTemplateDetails(found.data.templateId);
+          }
+          if (found.data.channel) {
+            setSelectedChannel(found.data.channel);
+          }
+        }
       }
     }
-  }, [itemId, segments, item]);
+  }, [itemId, segments]);
 
   // Fetch available templates
   useEffect(() => {
-    setIsLoading(true);
-    setError(null);
-    
     console.log("Fetching templates...");
     fetch(`${API_BASE_URL}/api/templates`)
       .then(res => {
         console.log("Templates API response status:", res.status);
         if (!res.ok) {
-          return res.text().then(text => {
-            throw new Error(`Failed to fetch templates: ${res.status} ${text}`);
-          });
+          throw new Error(`Failed to fetch templates: ${res.status}`);
         }
         return res.json();
       })
       .then(data => {
         console.log("Templates loaded:", data);
         setTemplates(Array.isArray(data) ? data : []);
-        setIsLoading(false);
       })
       .catch(err => {
         console.error("Error loading templates:", err);
         setError("Failed to load templates");
-        setLoading(false);
         // Provide fallback templates for development
         setTemplates([
           {
@@ -138,25 +109,50 @@ export default function PropertiesPanel({
       });
   }, []);
 
+  // Update preview URL when template or data changes
+  useEffect(() => {
+    console.log("Preview URL useEffect triggered:", {
+      selectedTemplate: !!selectedTemplate,
+      templateId: templateData.templateId,
+      templateData: templateData
+    });
+
+    if (!selectedTemplate || !templateData.templateId) {
+      console.log("Preview URL cleared - missing template or ID");
+      setPreviewUrl("");
+      return;
+    }
+
+    // Only use saved templateData for preview updates
+    const dataParam = encodeURIComponent(JSON.stringify(templateData));
+    const url = `${API_BASE_URL}/api/templates/${templateData.templateId}/preview?data=${dataParam}`;
+    
+    console.log("Preview URL updated:", url);
+    console.log("Template data being sent:", templateData);
+    
+    setPreviewUrl(url);
+  }, [selectedTemplate, templateData]); // Removed localTemplateData dependency
+
+  // FUNCTION DEFINITIONS (ALL AFTER HOOKS)
+
   // Fetch template details
   const fetchTemplateDetails = (templateId) => {
     if (!templateId) return;
 
-    setIsLoading(true);
-    fetch(`/api/templates/${templateId}`)
-      .then((res) =>
-        res.ok
-          ? res.json()
-          : Promise.reject(new Error("Failed to fetch template details"))
-      )
+    console.log(`Fetching template details for: ${templateId}`);
+    fetch(`${API_BASE_URL}/api/templates/${templateId}`)
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error("Failed to fetch template details");
+        }
+        return res.json();
+      })
       .then((template) => {
+        console.log("Template details loaded:", template);
         setSelectedTemplate(template);
-        setIsLoading(false);
       })
       .catch((err) => {
         console.error("Error loading template details:", err);
-        setLoading(false);
-
         // Try to find template in local cache
         const template = templates.find((t) => t.id === templateId);
         if (template) {
@@ -164,7 +160,6 @@ export default function PropertiesPanel({
         }
       });
   };
-
 
   // Handle template selection
   const handleTemplateChange = async (e) => {
@@ -195,18 +190,15 @@ export default function PropertiesPanel({
     setSelectedTemplate(template);
 
     try {
-      // Update item data in database - fix the API call structure
       const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
-        method: "PATCH", // Changed from PUT to PATCH
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: newData, // Only send the data field that needs updating
+          data: newData,
         }),
       });
 
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Template update error:", errorText);
         throw new Error("Failed to update template");
       }
 
@@ -228,28 +220,23 @@ export default function PropertiesPanel({
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
-        method: "PATCH", // Changed from PUT to PATCH
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: newData, // Only send the data field
+          data: newData,
         }),
       });
 
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Field update error:", errorText);
         throw new Error("Failed to update field");
       }
 
       setRefreshKey((k) => k + 1);
 
-      // Also update preview if it exists
+      // Update preview immediately after successful save
       if (previewRef.current) {
         previewRef.current.contentWindow.postMessage(
-          {
-            command: "update",
-            data: newData,
-          },
+          newData, // Send the data directly
           "*"
         );
       }
@@ -271,16 +258,14 @@ export default function PropertiesPanel({
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
-        method: "PATCH", // Changed from PUT to PATCH
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          data: newData, // Only send the data field
+          data: newData,
         }),
       });
 
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Channel update error:", errorText);
         throw new Error("Failed to update channel");
       }
 
@@ -288,6 +273,30 @@ export default function PropertiesPanel({
     } catch (err) {
       console.error("Error updating channel:", err);
       setError("Failed to update channel");
+    }
+  };
+
+  // Handle title change
+  const handleTitleChange = async (newTitle) => {
+    if (!selectedItem) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newTitle
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to update title");
+      }
+
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      console.error("Error updating title:", err);
+      setError("Failed to update title");
     }
   };
 
@@ -299,7 +308,7 @@ export default function PropertiesPanel({
     setError(null);
 
     try {
-      const res = await fetch("/api/graphics/control", {
+      const res = await fetch(`${API_BASE_URL}/api/graphics/control`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -312,7 +321,7 @@ export default function PropertiesPanel({
 
       if (!res.ok) throw new Error(`Failed to send ${command} command`);
 
-      // Update last command status in item data
+      // Update last command status
       const newData = {
         ...templateData,
         lastCommand: command,
@@ -322,20 +331,17 @@ export default function PropertiesPanel({
       setTemplateData(newData);
 
       // Update in database
-      await fetch(`/api/items/${selectedItem.id}`, {
-        method: "PUT",
+      await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: selectedItem.type,
           data: newData,
-          group_id: selectedItem.group_id,
-          position: selectedItem.position,
         }),
       });
 
       setRefreshKey((k) => k + 1);
 
-      // Also update preview
+      // Update preview
       if (previewRef.current) {
         previewRef.current.contentWindow.postMessage(
           {
@@ -353,17 +359,34 @@ export default function PropertiesPanel({
     }
   };
 
-  // Update preview URL when template or data changes
-  useEffect(() => {
-    if (!selectedTemplate || !templateData.templateId) {
-      setPreviewUrl("");
-      return;
+  // Handle preview click
+  const handlePreviewMouseDown = (e) => {
+    if (previewUrl) {
+      console.log("Mouse down - showing preview popup");
+      e.preventDefault();
+      setShowPreviewPopup(true);
     }
+  };
 
-    const dataParam = encodeURIComponent(JSON.stringify(templateData));
-    const url = `/api/templates/${templateData.templateId}/preview?data=${dataParam}`;
-    setPreviewUrl(url);
-  }, [selectedTemplate, templateData]);
+  // EFFECT: Global mouse events for preview popup
+  useEffect(() => {
+    if (!showPreviewPopup) return;
+
+    const handleGlobalMouseUp = (e) => {
+      console.log("Global mouse up detected - closing preview");
+      setShowPreviewPopup(false);
+    };
+
+    // Add listeners immediately when popup opens
+    document.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+
+    // Cleanup function
+    return () => {
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [showPreviewPopup]); // Re-run when popup state changes
 
   // Render parameter input based on type
   const renderParameterInput = (param) => {
@@ -372,8 +395,20 @@ export default function PropertiesPanel({
         return (
           <input
             type="text"
-            value={templateData[param.id] || ""}
-            onChange={(e) => handleFieldChange(param.id, e.target.value)}
+            value={localTemplateData.hasOwnProperty(param.id) 
+              ? localTemplateData[param.id] 
+              : (templateData[param.id] || "")}
+            onChange={(e) => {
+              // Always update local state, even for empty values
+              setLocalTemplateData(prev => ({
+                ...prev,
+                [param.id]: e.target.value // Allow empty strings
+              }));
+            }}
+            onBlur={(e) => {
+              // Update database on focus loss, allow empty values
+              handleFieldChange(param.id, e.target.value);
+            }}
             placeholder={param.info || param.id}
             style={{
               width: "100%",
@@ -382,17 +417,26 @@ export default function PropertiesPanel({
               borderRadius: 4,
               marginTop: 4,
             }}
-          />);
+          />
+        );
 
       case "NUMBER":
       case "INTEGER":
         return (
           <input
             type="number"
-            value={templateData[param.id] || 0}
-            onChange={(e) =>
-              handleFieldChange(param.id, Number(e.target.value))
-            }
+            value={localTemplateData.hasOwnProperty(param.id) 
+              ? localTemplateData[param.id] 
+              : (templateData[param.id] || 0)}
+            onChange={(e) => {
+              setLocalTemplateData(prev => ({
+                ...prev,
+                [param.id]: Number(e.target.value) || 0
+              }));
+            }}
+            onBlur={(e) => {
+              handleFieldChange(param.id, Number(e.target.value) || 0);
+            }}
             style={{
               width: "100%",
               padding: "8px",
@@ -400,21 +444,42 @@ export default function PropertiesPanel({
               borderRadius: 4,
               marginTop: 4,
             }}
-          />);
+          />
+        );
 
       case "COLOR":
         return (
           <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             <input
               type="color"
-              value={templateData[param.id] || param.default || "#000000"}
-              onChange={(e) => handleFieldChange(param.id, e.target.value)}
+              value={localTemplateData.hasOwnProperty(param.id) 
+                ? localTemplateData[param.id] 
+                : (templateData[param.id] || param.default || "#000000")}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                setLocalTemplateData(prev => ({
+                  ...prev,
+                  [param.id]: newValue
+                }));
+                // Color picker can update immediately since it's single action
+                handleFieldChange(param.id, newValue);
+              }}
               style={{ width: 40, height: 40 }}
             />
             <input
               type="text"
-              value={templateData[param.id] || param.default || "#000000"}
-              onChange={(e) => handleFieldChange(param.id, e.target.value)}
+              value={localTemplateData.hasOwnProperty(param.id) 
+                ? localTemplateData[param.id] 
+                : (templateData[param.id] || param.default || "#000000")}
+              onChange={(e) => {
+                setLocalTemplateData(prev => ({
+                  ...prev,
+                  [param.id]: e.target.value
+                }));
+              }}
+              onBlur={(e) => {
+                handleFieldChange(param.id, e.target.value);
+              }}
               style={{
                 flex: 1,
                 padding: "8px",
@@ -428,17 +493,20 @@ export default function PropertiesPanel({
       case "BOOL":
       case "BOOLEAN":
         return (
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              marginTop: 4,
-            }}
-          >
+          <label style={{ display: "flex", alignItems: "center", marginTop: 4 }}>
             <input
               type="checkbox"
-              checked={!!templateData[param.id]}
-              onChange={(e) => handleFieldChange(param.id, e.target.checked)}
+              checked={!!(localTemplateData.hasOwnProperty(param.id) 
+                ? localTemplateData[param.id] 
+                : templateData[param.id])}
+              onChange={(e) => {
+                const newValue = e.target.checked;
+                setLocalTemplateData(prev => ({
+                  ...prev,
+                  [param.id]: newValue
+                }));
+                handleFieldChange(param.id, newValue);
+              }}
               style={{ marginRight: 8 }}
             />
             {param.info || param.id}
@@ -449,8 +517,18 @@ export default function PropertiesPanel({
         return (
           <input
             type="text"
-            value={templateData[param.id] || ""}
-            onChange={(e) => handleFieldChange(param.id, e.target.value)}
+            value={localTemplateData.hasOwnProperty(param.id) 
+              ? localTemplateData[param.id] 
+              : (templateData[param.id] || "")}
+            onChange={(e) => {
+              setLocalTemplateData(prev => ({
+                ...prev,
+                [param.id]: e.target.value
+              }));
+            }}
+            onBlur={(e) => {
+              handleFieldChange(param.id, e.target.value);
+            }}
             placeholder={param.info || param.id}
             style={{
               width: "100%",
@@ -459,37 +537,50 @@ export default function PropertiesPanel({
               borderRadius: 4,
               marginTop: 4,
             }}
-          />);
+          />
+        );
     }
   };
 
   // Render graphics template editor
   const renderGraphicsTemplateEditor = () => {
-    if (!selectedItem || (selectedItem.type !== "toolbox-graphicstemplate" && selectedItem.type !== "graphics")) {
-      return null;
-    }
-
     return (
       <div style={{ padding: 15 }}>
-        <h3
-          style={{
-            marginTop: 0,
-            fontSize: 18,
-            color: "#1976d2",
-          }}
-        >
+        <h3 style={{ marginTop: 0, fontSize: 18, color: "#1976d2" }}>
           Graphics Template
         </h3>
 
+        {/* Title Field */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontWeight: 500, display: "block", marginBottom: 4 }}>
+            Title:
+          </label>
+          <input 
+            type="text"
+            value={localTemplateData.hasOwnProperty('title') 
+              ? localTemplateData.title 
+              : (itemData?.title || selectedItem?.title || "")}
+            onChange={(e) => {
+              setLocalTemplateData(prev => ({
+                ...prev,
+                title: e.target.value
+              }));
+            }}
+            onBlur={(e) => handleTitleChange(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px",
+              border: "1px solid #ddd",
+              borderRadius: "4px",
+              fontSize: "14px"
+            }}
+            placeholder="Enter title for this graphics template"
+          />
+        </div>
+
         {/* Template selection */}
         <div style={{ marginBottom: 20 }}>
-          <label
-            style={{
-              fontWeight: 500,
-              display: "block",
-              marginBottom: 4,
-            }}
-          >
+          <label style={{ fontWeight: 500, display: "block", marginBottom: 4 }}>
             Template Type
           </label>
           <select
@@ -501,7 +592,7 @@ export default function PropertiesPanel({
               border: "1px solid #ddd",
               borderRadius: 4,
             }}
-            disabled={loading}
+            disabled={isLoading}
           >
             <option value="">Select a template...</option>
             {templates.map((template) => (
@@ -511,13 +602,7 @@ export default function PropertiesPanel({
             ))}
           </select>
           {selectedTemplate?.description && (
-            <div
-              style={{
-                fontSize: 13,
-                color: "#666",
-                marginTop: 4,
-              }}
-            >
+            <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
               {selectedTemplate.description}
             </div>
           )}
@@ -525,13 +610,7 @@ export default function PropertiesPanel({
 
         {/* Channel selection */}
         <div style={{ marginBottom: 20 }}>
-          <label
-            style={{
-              fontWeight: 500,
-              display: "block",
-              marginBottom: 4,
-            }}
-          >
+          <label style={{ fontWeight: 500, display: "block", marginBottom: 4 }}>
             Output Channel
           </label>
           <select
@@ -543,7 +622,7 @@ export default function PropertiesPanel({
               border: "1px solid #ddd",
               borderRadius: 4,
             }}
-            disabled={loading}
+            disabled={isLoading}
           >
             {[1, 2, 3, 4].map((channel) => (
               <option key={channel} value={channel}>
@@ -556,31 +635,13 @@ export default function PropertiesPanel({
         {/* Template parameters */}
         {selectedTemplate && (
           <div style={{ marginBottom: 20 }}>
-            <h4
-              style={{
-                marginTop: 0,
-                marginBottom: 12,
-                fontSize: 16,
-              }}
-            >
+            <h4 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>
               Template Parameters
             </h4>
-
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-              }}
-            >
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {(selectedTemplate.parameters || []).map((param) => (
                 <div key={param.id}>
-                  <label
-                    style={{
-                      fontWeight: 500,
-                      display: "block",
-                    }}
-                  >
+                  <label style={{ fontWeight: 500, display: "block" }}>
                     {param.info || param.id}
                   </label>
                   {renderParameterInput(param)}
@@ -593,53 +654,73 @@ export default function PropertiesPanel({
         {/* Preview */}
         {previewUrl && (
           <div style={{ marginBottom: 20 }}>
-            <h4
-              style={{
-                marginTop: 0,
-                marginBottom: 12,
-                fontSize: 16,
-              }}
-            >
+            <h4 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>
               Preview
             </h4>
-
             <div
               style={{
                 width: "100%",
                 aspectRatio: "16/9",
-                background: "#333",
+                background: "#000",
                 border: "1px solid #ddd",
                 borderRadius: 4,
                 overflow: "hidden",
+                position: "relative",
+                height: "auto",
+                cursor: "pointer",
+                userSelect: "none",
               }}
+              onMouseDown={handlePreviewMouseDown}
+              title="Hold to preview"
             >
               <iframe
                 ref={previewRef}
                 src={previewUrl}
-                style={{
-                  width: "100%",
-                  height: "100%",
+                style={{ 
+                  width: "100%", 
+                  height: "100%", 
                   border: "none",
+                  display: "block",
+                  pointerEvents: "none",
                 }}
                 title="Template Preview"
+                onLoad={() => {
+                  console.log("Preview iframe loaded");
+                  if (previewRef.current && templateData.templateId) {
+                    setTimeout(() => {
+                      previewRef.current.contentWindow.postMessage(templateData, "*");
+                    }, 100);
+                  }
+                }}
+                onError={(e) => {
+                  console.error("Preview iframe error:", e);
+                }}
               />
+              <div
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  background: "rgba(0,0,0,0.7)",
+                  color: "white",
+                  padding: "4px 8px",
+                  borderRadius: 4,
+                  fontSize: 12,
+                  opacity: 0.8,
+                }}
+              >
+                🔍 Hold to preview
+              </div>
             </div>
           </div>
         )}
 
-        {/* Template controls */}
+        {/* Playback controls */}
         {selectedTemplate && (
           <div style={{ marginTop: 20 }}>
-            <h4
-              style={{
-                marginTop: 0,
-                marginBottom: 12,
-                fontSize: 16,
-              }}
-            >
+            <h4 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>
               Playback Controls
             </h4>
-
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 onClick={() => handleCommand("play")}
@@ -653,11 +734,10 @@ export default function PropertiesPanel({
                   cursor: "pointer",
                   fontWeight: 500,
                 }}
-                disabled={isloading || !templateData.templateId}
+                disabled={isLoading || !templateData.templateId}
               >
                 Play
               </button>
-
               <button
                 onClick={() => handleCommand("update")}
                 style={{
@@ -674,7 +754,6 @@ export default function PropertiesPanel({
               >
                 Update
               </button>
-
               <button
                 onClick={() => handleCommand("stop")}
                 style={{
@@ -692,15 +771,8 @@ export default function PropertiesPanel({
                 Stop
               </button>
             </div>
-
             {templateData.lastCommand && (
-              <div
-                style={{
-                  marginTop: 8,
-                  fontSize: 12,
-                  color: "#666",
-                }}
-              >
+              <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
                 Last command: {templateData.lastCommand} at{" "}
                 {new Date(templateData.lastCommandTime).toLocaleTimeString()}
               </div>
@@ -723,202 +795,245 @@ export default function PropertiesPanel({
             {error}
           </div>
         )}
+
+        {showPreviewPopup && (
+          <div
+            data-preview-popup="true"
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.8)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 10000,
+              padding: 20,
+            }}
+            onClick={() => {
+              console.log("Overlay clicked - closing preview");
+              setShowPreviewPopup(false);
+            }}
+          >
+            <div
+              style={{
+                position: "relative",
+                width: "90vw",
+                maxWidth: "1200px",
+                aspectRatio: "16/9",
+                background: "#000",
+                borderRadius: 8,
+                overflow: "hidden",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+              }}
+              onClick={(e) => {
+                console.log("Preview content clicked - preventing close");
+                e.stopPropagation();
+              }}
+            >
+              <iframe
+                src={previewUrl}
+                style={{ 
+                  width: "100%", 
+                  height: "100%", 
+                  border: "none",
+                  display: "block"
+                }}
+                title="Template Preview - Enlarged"
+                onLoad={(e) => {
+                  if (templateData.templateId) {
+                    setTimeout(() => {
+                      e.target.contentWindow.postMessage(templateData, "*");
+                    }, 100);
+                  }
+                }}
+              />
+              
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 10,
+                  left: 10,
+                  background: "rgba(0,0,0,0.7)",
+                  color: "white",
+                  padding: "8px 12px",
+                  borderRadius: 4,
+                  fontSize: 12,
+                  opacity: 0.9,
+                }}
+              >
+                {selectedTemplate?.name} - Channel {selectedChannel} • Release to close
+              </div>
+              
+              {/* Fix the button closing tag here */}
+              <button
+                onClick={() => {
+                  console.log("Close button clicked");
+                  setShowPreviewPopup(false);
+                }}
+                style={{
+                  position: "absolute",
+                  top: 10,
+                  right: 10,
+                  background: "rgba(0,0,0,0.7)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 4,
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  zIndex: 10001,
+                }}
+              >
+                ✕ Close
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
 
-  // Render OBS Command editor (placeholder for now)
+  // Render OBS Command editor (placeholder)
   const renderObsCommandEditor = () => {
-    if (!selectedItem || selectedItem.type !== "toolbox-obscommand") {
-      return null;
-    }
-
     return (
       <div style={{ padding: 15 }}>
-        <h3
-          style={{
-            marginTop: 0,
-            fontSize: 18,
-            color: "#1976d2",
-          }}
-        >
+        <h3 style={{ marginTop: 0, fontSize: 18, color: "#1976d2" }}>
           OBS Command
         </h3>
-        <p>OBS command editor will go here.</p>
+        
+        {/* Title Field */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontWeight: 500, display: "block", marginBottom: 4 }}>
+            Title:
+          </label>
+          <input 
+            type="text"
+            value={itemData?.title || selectedItem?.title || ""} 
+            onChange={(e) => handleTitleChange(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px",
+              border: "1px solid #ddd",
+              borderRadius: "4px",
+              fontSize: "14px"
+            }}
+            placeholder="Enter title for this OBS command"
+          />
+        </div>
+
+        <p style={{ color: "#666", fontStyle: "italic" }}>
+          OBS command editor will be implemented here.
+        </p>
       </div>
     );
   };
 
-  // Render Presenter Note editor (placeholder for now)
+  // Render Presenter Note editor (placeholder)
   const renderPresenterNoteEditor = () => {
-    if (!selectedItem || selectedItem.type !== "toolbox-presenternote") {
-      return null;
-    }
-
     return (
       <div style={{ padding: 15 }}>
-        <h3
-          style={{
-            marginTop: 0,
-            fontSize: 18,
-            color: "#1976d2",
-          }}
-        >
+        <h3 style={{ marginTop: 0, fontSize: 18, color: "#1976d2" }}>
           Presenter Note
         </h3>
-        <p>Presenter note editor will go here.</p>
+        
+        {/* Title Field */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontWeight: 500, display: "block", marginBottom: 4 }}>
+            Title:
+          </label>
+          <input 
+            type="text"
+            value={itemData?.title || selectedItem?.title || ""} 
+            onChange={(e) => handleTitleChange(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px",
+              border: "1px solid #ddd",
+              borderRadius: "4px",
+              fontSize: "14px"
+            }}
+            placeholder="Enter title for this presenter note"
+          />
+        </div>
+
+        <p style={{ color: "#666", fontStyle: "italic" }}>
+          Presenter note editor will be implemented here.
+        </p>
       </div>
     );
   };
 
-// Fetch item data when itemId changes
-  
- if (!itemId || !itemData) {
+  // CONDITIONAL RENDERING (ALL AT THE BOTTOM)
+
+  // No item selected
+  if (!itemId || !itemData || !selectedItem) {
     return (
-      <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
-        Select an item to view its properties
-      </div>
-    );
-  }
-
-  if (itemData.type === 'graphicstemplate' || itemData.type === 'toolbox-graphicstemplate') {
-  return (
-    <div style={{ padding: "15px" }}>
-      <h3 style={{ marginTop: 0, fontSize: 18, color: "#1976d2" }}>
-        Graphics Template Properties
-      </h3>
-      
-      {/* Title Field */}
-      <div style={{ marginBottom: 20 }}>
-        <label style={{ fontWeight: 500, display: "block", marginBottom: 4 }}>
-          Title:
-        </label>
-        <input 
-          type="text"
-          value={itemData.title || ""} 
-          onChange={async (e) => {
-            const newTitle = e.target.value;
-            
-            try {
-              // Update the item title in the database
-              const res = await fetch(`${API_BASE_URL}/api/items/${itemData.id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  title: newTitle
-                }),
-              });
-
-              if (!res.ok) {
-                throw new Error("Failed to update title");
-              }
-
-              // Trigger a refresh of the rundown to show the updated title
-              setRefreshKey((k) => k + 1);
-              
-            } catch (err) {
-              console.error("Error updating title:", err);
-              setError("Failed to update title");
-            }
-          }}
-          style={{
-            width: "100%",
-            padding: "8px",
-            border: "1px solid #ddd",
-            borderRadius: "4px",
-            fontSize: "14px"
-          }}
-          placeholder="Enter title for this graphics template"
-        />
-      </div>
-
-      {/* Use the full graphics template editor */}
-      {renderGraphicsTemplateEditor()}
-    </div>
-  );
-}
-
-
-  // Main render
-  if (!selectedItem) {
-    return (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          minHeight: 0,
-          minWidth: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          border: "1.5px dashed #b1c7e7",
-          borderRadius: 10,
-          color: "#7c7c7c",
-          background: "#fafdff",
-          fontSize: 17,
-          fontWeight: 500,
-          padding: 24,
-          textAlign: "center",
-          opacity: 0.88,
-          boxSizing: "border-box",
-          pointerEvents: "none",
-          userSelect: "none",
-        }}
-      >
+      <div style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        border: "1.5px dashed #b1c7e7",
+        borderRadius: 10,
+        color: "#7c7c7c",
+        background: "#fafdff",
+        fontSize: 17,
+        fontWeight: 500,
+        padding: 24,
+        textAlign: "center",
+      }}>
         Properties panel (select a rundown item)
       </div>
     );
   }
 
+  // Main render
   return (
-    <div
-      style={{
-        flex: 1,
-        overflow: "auto",
-        background: "#f8fafd",
-        height: "100%",
-      }}
-    >
-      <div
-        style={{
-          padding: "15px",
-          borderBottom: "1px solid #e1e6ec",
-        }}
-      >
-        <h2
-          style={{
-            margin: 0,
-            fontSize: 18,
-          }}
-        >
+    <div style={{
+      flex: 1,
+      overflow: "auto",
+      background: "#f8fafd",
+      height: "100%",
+    }}>
+      <div style={{
+        padding: "15px",
+        borderBottom: "1px solid #e1e6ec",
+      }}>
+        <h2 style={{ margin: 0, fontSize: 18 }}>
           Properties
         </h2>
       </div>
 
-      <div
-        style={{
-          height: "calc(100% - 50px)",
-          overflow: "auto",
-        }}
-      >
-        {loading && (
-          <div
-            style={{
-              padding: 15,
-              color: "#666",
-              fontSize: 14,
-              textAlign: "center",
-            }}
-          >
+      <div style={{
+        height: "calc(100% - 50px)",
+        overflow: "auto",
+      }}>
+        {isLoading && (
+          <div style={{
+            padding: 15,
+            color: "#666",
+            fontSize: 14,
+            textAlign: "center",
+          }}>
             Loading...
           </div>
         )}
 
-        {selectedItem.type === "toolbox-graphicstemplate" &&
+        {(selectedItem.type === "toolbox-graphicstemplate" || selectedItem.type === "graphicstemplate") && 
           renderGraphicsTemplateEditor()}
-        {selectedItem.type === "toolbox-obscommand" && renderObsCommandEditor()}
-        {selectedItem.type === "toolbox-presenternote" && renderPresenterNoteEditor()}
+        
+        {(selectedItem.type === "toolbox-obscommand" || selectedItem.type === "obscommand") && 
+          renderObsCommandEditor()}
+        
+        {(selectedItem.type === "toolbox-presenternote" || selectedItem.type === "presenternote") && 
+          renderPresenterNoteEditor()}
+
+        {/* Add more module types here as needed */}
       </div>
     </div>
   );

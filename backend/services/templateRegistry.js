@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const xml2js = require('xml2js'); // You'll need: npm install xml2js
 
 class TemplateRegistry {
   constructor() {
@@ -8,7 +9,43 @@ class TemplateRegistry {
     console.log(`Template registry initialized with directory: ${this.templatesDir}`);
   }
   
-  // Initialize registry
+  // Parse XML template file
+  async parseTemplateXml(xmlPath) {
+    try {
+      const xmlContent = fs.readFileSync(xmlPath, 'utf8');
+      const parser = new xml2js.Parser();
+      const result = await parser.parseStringPromise(xmlContent);
+      
+      const template = result.template;
+      const parameters = [];
+      
+      if (template.parameters && template.parameters[0] && template.parameters[0].parameter) {
+        template.parameters[0].parameter.forEach(param => {
+          parameters.push({
+            id: param.$.id,
+            type: param.$.type,
+            default: param.$.default || param._,
+            info: param.$.info || ''
+          });
+        });
+      }
+      
+      return {
+        name: template.name[0],
+        description: template.description[0],
+        author: template.author ? template.author[0] : 'Unknown',
+        version: template.version ? template.version[0] : '1.0',
+        html: template.html ? template.html[0] : 'index.html',
+        thumbnail: template.thumbnail ? template.thumbnail[0] : null,
+        parameters
+      };
+    } catch (err) {
+      console.error('Error parsing XML:', err);
+      return null;
+    }
+  }
+  
+  // Initialize registry by scanning templates directory
   async initialize() {
     console.log(`Scanning templates directory: ${this.templatesDir}`);
     
@@ -16,82 +53,33 @@ class TemplateRegistry {
     if (!fs.existsSync(this.templatesDir)) {
       console.log(`Creating templates directory: ${this.templatesDir}`);
       fs.mkdirSync(this.templatesDir, { recursive: true });
-      
-      // Create a sample template
-      const sampleDir = path.join(this.templatesDir, 'lower-third');
-      fs.mkdirSync(sampleDir, { recursive: true });
-      
-      // Create sample template.xml
-      const sampleXml = `<?xml version="1.0" encoding="UTF-8"?>
-<template>
-  <name>Lower Third</name>
-  <description>Standard lower third template</description>
-  <author>System</author>
-  <version>1.0</version>
-  <thumbnail>thumbnail.png</thumbnail>
-  <html>index.html</html>
-  <parameters>
-    <parameter id="name" type="STRING" default="Name" info="Person's name"/>
-    <parameter id="title" type="STRING" default="Title" info="Person's title"/>
-    <parameter id="color" type="COLOR" default="#1976d2" info="Background color"/>
-  </parameters>
-</template>`;
-      
-      fs.writeFileSync(path.join(sampleDir, 'template.xml'), sampleXml);
-      
-      // Create sample index.html
-      const sampleHtml = `<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
-    .lower-third { position: absolute; bottom: 100px; left: 50px; background: var(--color, #1976d2); color: white; padding: 15px; border-radius: 5px; }
-    .name { font-size: 24px; font-weight: bold; }
-    .title { font-size: 18px; opacity: 0.9; }
-  </style>
-</head>
-<body>
-  <div class="lower-third" id="container">
-    <div class="name" id="nameField">Name</div>
-    <div class="title" id="titleField">Title</div>
-  </div>
-  <script>
-    function updateFields(data) {
-      document.getElementById('nameField').textContent = data.name || 'Name';
-      document.getElementById('titleField').textContent = data.title || 'Title';
-      document.documentElement.style.setProperty('--color', data.color || '#1976d2');
-    }
-    
-    // Listen for messages from parent window
-    window.addEventListener('message', function(event) {
-      if (event.data && typeof event.data === 'object') {
-        updateFields(event.data);
-      }
-    });
-  </script>
-</body>
-</html>`;
-      
-      fs.writeFileSync(path.join(sampleDir, 'index.html'), sampleHtml);
+      await this.createSampleTemplate();
     }
     
     try {
-      // Add a default template to the registry
-      this.templates['lower-third'] = {
-        id: 'lower-third',
-        name: 'Lower Third',
-        description: 'Standard lower third template',
-        author: 'System',
-        version: '1.0',
-        parameters: [
-          { id: 'name', type: 'STRING', default: 'Name', info: "Person's name" },
-          { id: 'title', type: 'STRING', default: 'Title', info: "Person's title" },
-          { id: 'color', type: 'COLOR', default: '#1976d2', info: 'Background color' }
-        ],
-        thumbnail: 'thumbnail.png',
-        html: 'index.html',
-        path: path.join(this.templatesDir, 'lower-third')
-      };
+      // Scan for template directories
+      const items = fs.readdirSync(this.templatesDir, { withFileTypes: true });
+      
+      for (const item of items) {
+        if (item.isDirectory()) {
+          const templateDir = path.join(this.templatesDir, item.name);
+          const xmlPath = path.join(templateDir, 'template.xml');
+          
+          if (fs.existsSync(xmlPath)) {
+            console.log(`Found template: ${item.name}`);
+            const templateData = await this.parseTemplateXml(xmlPath);
+            
+            if (templateData) {
+              this.templates[item.name] = {
+                id: item.name,
+                ...templateData,
+                path: templateDir
+              };
+              console.log(`Loaded template: ${templateData.name}`);
+            }
+          }
+        }
+      }
       
       console.log(`Template registry initialized with ${Object.keys(this.templates).length} templates`);
       return true;
@@ -99,6 +87,134 @@ class TemplateRegistry {
       console.error('Failed to initialize template registry:', err);
       return false;
     }
+  }
+  
+  async createSampleTemplate() {
+    const sampleDir = path.join(this.templatesDir, 'lower-third');
+    console.log(`Creating sample template in: ${sampleDir}`);
+    
+    fs.mkdirSync(sampleDir, { recursive: true });
+    
+    // Create sample template.xml
+    const sampleXml = `<?xml version="1.0" encoding="UTF-8"?>
+<template>
+  <name>Lower Third</name>
+  <description>Name and title lower third graphic</description>
+  <author>Rundown App</author>
+  <version>1.0</version>
+  <thumbnail>thumbnail.png</thumbnail>
+  <html>index.html</html>
+  <parameters>
+    <parameter id="f0" type="STRING" default="Name" info="Name"/>
+    <parameter id="f1" type="STRING" default="Title" info="Title or description"/>
+    <parameter id="color" type="COLOR" default="#1976d2" info="Background Color"/>
+  </parameters>
+</template>`;
+    
+    fs.writeFileSync(path.join(sampleDir, 'template.xml'), sampleXml);
+    console.log('Created template.xml');
+    
+    // Create sample index.html
+    const sampleHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body { 
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: Arial, sans-serif; 
+      background: #222;
+      position: relative;
+    }
+    
+    .lower-third { 
+      position: absolute; 
+      bottom: 120px;
+      left: 80px;
+      background: var(--color, #1976d2); 
+      color: white; 
+      padding: 20px 30px; 
+      border-radius: 8px; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      max-width: 600px;
+    }
+    
+    .name { 
+      font-size: 32px; 
+      font-weight: bold; 
+      margin-bottom: 8px; 
+      line-height: 1.2;
+    }
+    
+    .title { 
+      font-size: 24px; 
+      opacity: 0.95; 
+      line-height: 1.2;
+    }
+  </style>
+</head>
+<body>
+  <div class="lower-third" id="container">
+    <div class="name" id="nameField">Name</div>
+    <div class="title" id="titleField">Title</div>
+  </div>
+  
+  <script>
+    console.log('Template: loaded and ready');
+    
+    function updateFields(data) {
+      console.log('Template: data received', data);
+      
+      const nameField = document.getElementById('nameField');
+      const titleField = document.getElementById('titleField');
+      
+      if (nameField) nameField.textContent = data.f0 || data.name || 'Name';
+      if (titleField) titleField.textContent = data.f1 || data.title || 'Title';
+      
+      if (data.color) {
+        document.documentElement.style.setProperty('--color', data.color);
+      }
+    }
+    
+    // Handle postMessage from parent window (for preview)
+    window.addEventListener('message', function(event) {
+      console.log('Template: message received', event.data);
+      if (event.data && typeof event.data === 'object') {
+        updateFields(event.data);
+      }
+    });
+    
+    // Parse URL parameters on load
+    function parseUrlParams() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const dataParam = urlParams.get('data');
+      if (dataParam) {
+        try {
+          const data = JSON.parse(decodeURIComponent(dataParam));
+          console.log('Template: URL data parsed', data);
+          updateFields(data);
+        } catch (err) {
+          console.error('Template: Error parsing URL data', err);
+        }
+      }
+    }
+    
+    // Initialize on load
+    parseUrlParams();
+  </script>
+</body>
+</html>`;
+    
+    fs.writeFileSync(path.join(sampleDir, 'index.html'), sampleHtml);
+    console.log('Created index.html');
   }
   
   // Get all templates
@@ -115,9 +231,21 @@ class TemplateRegistry {
   // Get path to template HTML file
   getTemplatePath(id) {
     const template = this.templates[id];
-    if (!template) return null;
+    if (!template) {
+      console.log(`Template not found: ${id}`);
+      return null;
+    }
     
-    return path.join(template.path, template.html);
+    const htmlPath = path.join(template.path, template.html);
+    console.log(`Template path for ${id}: ${htmlPath}`);
+    
+    // Check if file exists
+    if (!fs.existsSync(htmlPath)) {
+      console.error(`Template HTML file not found: ${htmlPath}`);
+      return null;
+    }
+    
+    return htmlPath;
   }
 }
 

@@ -12,6 +12,8 @@ const templatesRouter = require('./src/routes/templates');
 const segmentsRouter = require('./src/routes/segments');
 const groupsRouter = require('./src/routes/groups');
 const itemsRouter = require('./src/routes/items');
+const templateRegistry = require('./services/templateRegistry');
+const graphicsRouter = require('./src/routes/graphics');
 
 // Create Express app
 const app = express();
@@ -30,6 +32,7 @@ app.use('/api/segments', segmentsRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/items', itemsRouter);
 app.use('/api', rundownRouter);
+app.use('/api/graphics', graphicsRouter);
 
 // WebSocket setup
 const wss = new WebSocket.Server({ server });
@@ -52,4 +55,11 @@ wss.on('connection', (ws, req) => {
 const PORT = process.env.PORT || 5050;
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+});
+
+// Initialize template registry
+templateRegistry.initialize().then(() => {
+  console.log('Template registry initialized successfully');
+}).catch(err => {
+  console.error('Failed to initialize template registry:', err);
 });
