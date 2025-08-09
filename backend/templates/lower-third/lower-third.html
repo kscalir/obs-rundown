@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lower Third</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      background: transparent;
+      font-family: 'Arial', sans-serif;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .lower-third-container {
+      position: absolute;
+      bottom: 6.25%; /* 120px at 1920x1080 = 6.25% */
+      left: 4.17%;   /* 80px at 1920x1080 = 4.17% */
+      width: 41.67%; /* 800px at 1920x1080 = 41.67% */
+      height: 11.11%; /* 120px at 1920x1080 = 11.11% */
+      min-width: 300px; /* Minimum size for readability */
+      min-height: 80px;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    .background {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #1976d2, #1565c0);
+      border-radius: min(8px, 1vh);
+      transform: translateX(-101%); /* Extra 1% to ensure complete hide */
+      transition: none;
+    }
+
+    .content {
+      position: relative;
+      z-index: 2;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 0 4%;
+      overflow: hidden;
+    }
+
+    .name {
+      font-size: clamp(18px, 3.33vw, 36px); /* 36px at 1080p */
+      font-weight: bold;
+      color: white;
+      margin-bottom: 0.4em;
+      white-space: nowrap;
+      overflow: hidden;
+      transform: translateX(-101%); /* Extra 1% to ensure complete hide */
+      transition: none;
+      line-height: 1.1;
+    }
+
+    .title {
+      font-size: clamp(12px, 2.22vw, 24px); /* 24px at 1080p */
+      font-weight: normal;
+      color: rgba(255, 255, 255, 0.9);
+      white-space: nowrap;
+      overflow: hidden;
+      transform: translateX(-101%); /* Extra 1% to ensure complete hide */
+      transition: none;
+      line-height: 1.1;
+    }
+
+    /* Animation states */
+    .animate-in .background {
+      transform: translateX(0);
+      transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    .animate-in .name {
+      transform: translateX(0);
+      transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      transition-delay: 0.4s;
+    }
+
+    .animate-in .title {
+      transform: translateX(0);
+      transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      transition-delay: 0.5s;
+    }
+
+    .animate-out .background {
+      transform: translateX(-101%); /* Extra 1% to ensure complete hide */
+      transition: transform 0.4s cubic-bezier(0.55, 0.06, 0.68, 0.19);
+      transition-delay: 0.6s;
+    }
+
+    .animate-out .name {
+      transform: translateX(-101%); /* Extra 1% to ensure complete hide */
+      transition: transform 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19);
+      transition-delay: 0.0s;
+    }
+
+    .animate-out .title {
+      transform: translateX(-101%); /* Extra 1% to ensure complete hide */
+      transition: transform 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19);
+      transition-delay: 0.1s;
+    }
+
+    .visible .background {
+      transform: translateX(0);
+      transition: none;
+    }
+
+    .visible .name {
+      transform: translateX(0);
+      transition: none;
+    }
+
+    .visible .title {
+      transform: translateX(0);
+      transition: none;
+    }
+
+    /* Media queries for different aspect ratios and sizes */
+    @media (max-width: 1280px) {
+      .lower-third-container {
+        width: 45%;
+        min-width: 280px;
+      }
+    }
+
+    @media (max-width: 854px) {
+      .lower-third-container {
+        width: 50%;
+        min-width: 250px;
+        min-height: 70px;
+      }
+    }
+
+    @media (max-height: 720px) {
+      .lower-third-container {
+        bottom: 8%;
+        height: 12%;
+      }
+    }
+
+    @media (max-height: 480px) {
+      .lower-third-container {
+        bottom: 10%;
+        height: 15%;
+        min-height: 60px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="lower-third-container" id="lowerThird">
+    <div class="background"></div>
+    <div class="content">
+      <div class="name" id="f0">John Doe</div>
+      <div class="title" id="f1">Host</div>
+    </div>
+  </div>
+
+  <script>
+    let currentState = 'stopped';
+    let animationTimeout = null;
+
+    // Helper function to adjust color brightness
+    function adjustBrightness(color, percent) {
+      try {
+        let hex = color;
+        if (color.startsWith('#')) {
+          hex = color.substring(1);
+        }
+        
+        const num = parseInt(hex, 16);
+        const amt = Math.round(2.55 * percent);
+        const R = Math.max(0, Math.min(255, (num >> 16) + amt));
+        const G = Math.max(0, Math.min(255, (num >> 8 & 0x00FF) + amt));
+        const B = Math.max(0, Math.min(255, (num & 0x0000FF) + amt));
+        
+        return "#" + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
+      } catch (e) {
+        // Silent error handling for production
+        return color;
+      }
+    }
+
+    // GDD-compliant template interface
+    window.play = function() {
+      if (currentState !== 'playing') {
+        animateIn();
+        currentState = 'playing';
+      }
+    };
+
+    window.stop = function() {
+      if (currentState === 'playing') {
+        animateOut();
+        currentState = 'stopped';
+      }
+    };
+
+    window.next = function() {
+      // For templates with multiple states/pages
+    };
+
+    window.update = function(templateData) {
+      if (templateData && templateData.componentData) {
+        templateData.componentData.forEach(component => {
+          updateComponent(component.componentName, component.data);
+        });
+      } else {
+        updateSimpleData(templateData);
+      }
+    };
+
+    function updateComponent(componentName, dataArray) {
+      const element = document.getElementById(componentName);
+      if (!element) return;
+
+      const textData = dataArray.find(d => d.id === 'text');
+      if (textData) {
+        if (componentName === 'color') {
+          const background = document.querySelector('.background');
+          const color = textData.value;
+          background.style.background = `linear-gradient(135deg, ${color}, ${adjustBrightness(color, -20)})`;
+        } else {
+          element.textContent = textData.value;
+        }
+      }
+    }
+
+    function updateSimpleData(data) {
+      if (data.f0 !== undefined) {
+        document.getElementById('f0').textContent = data.f0;
+      }
+      if (data.f1 !== undefined) {
+        document.getElementById('f1').textContent = data.f1;
+      }
+      if (data.color !== undefined) {
+        const background = document.querySelector('.background');
+        const color = data.color;
+        background.style.background = `linear-gradient(135deg, ${color}, ${adjustBrightness(color, -20)})`;
+      }
+    }
+
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      
+      if (data.command) {
+        switch (data.command) {
+          case 'play':
+            window.play();
+            if (data.data) window.update(data.data);
+            break;
+          case 'stop':
+            window.stop();
+            break;
+          case 'update':
+            if (data.data) window.update(data.data);
+            break;
+        }
+      } else {
+        window.update(data);
+      }
+    });
+
+    function animateIn() {
+      const container = document.getElementById('lowerThird');
+      
+      if (animationTimeout) {
+        clearTimeout(animationTimeout);
+      }
+      
+      container.className = 'lower-third-container';
+      container.offsetHeight; // Force reflow
+      container.classList.add('animate-in');
+      
+      animationTimeout = setTimeout(() => {
+        container.className = 'lower-third-container visible';
+      }, 800);
+    }
+
+    function animateOut() {
+      const container = document.getElementById('lowerThird');
+      
+      if (animationTimeout) {
+        clearTimeout(animationTimeout);
+      }
+      
+      currentState = 'animating-out';
+      container.className = 'lower-third-container animate-out';
+      
+      animationTimeout = setTimeout(() => {
+        container.className = 'lower-third-container';
+        currentState = 'stopped';
+      }, 1000);
+    }
+
+    // Silent loading for production
+  </script>
+</body>
+</html>

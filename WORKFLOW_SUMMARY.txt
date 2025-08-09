@@ -1,0 +1,56 @@
+# obs-rundown Workflow & Design Summary
+
+## Status Legend
+- [x] = Complete
+- [ ] = Not started / Roadmap
+- [~] = In progress
+
+## 1. Backend & Frontend CRUD Fixes [x]
+- Fixed 404 errors for creating/deleting segments, groups, items.
+- Added backend DELETE endpoints for segments, groups, items.
+- Updated frontend logic to match backend API (POST/PATCH/DELETE).
+- Confirmed CRUD operations work as expected.
+
+## 2. OBS Integration [ ]
+- Design robust scene/source/transition management.
+- Implement UID handling for scenes and sources.
+- Discuss error handling and best practices for OBS WebSocket API.
+
+## 3. UI & Data Model Design [ ]
+- Shift to a scene-centric workflow: cues are grouped by scene.
+- Each rundown item stores scene UID and audio automation properties.
+- Properties panel supports per-cue transition and automation settings.
+
+## 4. Transitions & Audio Automation [ ]
+- Each cue can have its own transition and audio automation.
+- Logic for continuous media playback and per-cue automation.
+- Store automation curves and transition settings per item.
+
+## 5. Automatic Player/Source Assignment [ ]
+- Logic for automatic assignment of media players/sources to cues.
+- Media referenced by name; automation routed to correct player/source.
+- Simplifies workflow and reduces manual errors.
+
+## 6. OSC/MIDI Control Surface Integration [ ]
+- Integration for live audio sweetening.
+- "Soft takeover" and "deadband" techniques for non-motorized faders.
+- Prevent audio jumps when taking manual control.
+
+## 7. Audio Visualization UI [ ]
+- UI patterns: sliders, overlays, meters, automation curves.
+- Properties panel will visualize audio levels and automation.
+
+## 8. Workflow Memory & Future-Proofing [ ]
+- Commit all workflow and design ideas to memory for future development.
+- Ensure context for CRUD, OBS, transitions, automation, OSC/MIDI, and player/source assignment is captured.
+
+## 9. Pending Tasks [ ]
+- Implement automatic player/source assignment in cue creation/execution.
+- Update UI/data model for media referencing and automation routing.
+- Design/implement OSC/MIDI integration with soft takeover/deadband.
+- Create visual audio representation UI.
+
+---
+---
+Sections 2 and onward are roadmap items and have not been implemented yet. Mark items as [x] when complete, [~] when in progress.
+Refer to this file for alignment and future planning.

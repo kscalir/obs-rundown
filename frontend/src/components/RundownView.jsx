@@ -333,7 +333,7 @@ export default function RundownView({ showId, selectedTab }) {
     
     setEditingType("group");
     setEditingId(`new-${segmentId}`);
-    setEditingValue("New Group");
+    setEditingValue("New Cue");
     
     // Focus the input once it renders
     setTimeout(() => {
@@ -367,13 +367,14 @@ export default function RundownView({ showId, selectedTab }) {
         return;
       }
       
-      console.log(`Creating new segment "${title}" in episode ${selectedEpisode.id}`);
-      
-      fetch(`${API_BASE_URL}/api/episodes/${selectedEpisode.id}/segments`, {
+      console.log(`Creating new segment \"${title}\" in episode ${selectedEpisode.id}`);
+      // Use correct endpoint and field names
+      fetch(`${API_BASE_URL}/api/segments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          title: title.trim(),
+          episode_id: selectedEpisode.id,
+          name: title.trim(),
           position: segments.length 
         })
       })
@@ -459,13 +460,14 @@ export default function RundownView({ showId, selectedTab }) {
         return;
       }
       
-      console.log(`Creating new group "${title}" in segment ${segmentId}`);
-      
-      fetch(`${API_BASE_URL}/api/segments/${segmentId}/groups`, {
+      console.log(`Creating new group \"${title}\" in segment ${segmentId}`);
+      // Use correct endpoint and field names
+      fetch(`${API_BASE_URL}/api/groups`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          title,
+          segment_id: segmentId,
+          name: title,
           position: segments.find(s => s.id === segmentId)?.groups.length || 0
         })
       })
@@ -1252,7 +1254,7 @@ const getSelectedItem = () => {
                     }}
                     style={{ cursor: "text" }}
                   >
-                    {group.title || "Untitled Group"}
+                    {group.title || "Untitled Cue"}
                   </span>
                   <span>{group.expanded ? "▼" : "▶"}</span>
                 </>
@@ -1371,7 +1373,7 @@ const getSelectedItem = () => {
                   }}
                   style={STYLES.addButton}
                 >
-                  + Group
+                  + Cue
                 </button>
                 <button 
                   onClick={e => {
@@ -1425,7 +1427,7 @@ const getSelectedItem = () => {
                 
                 {segment.groups.length === 0 && (
                   <div style={STYLES.placeholder}>
-                    No groups in this segment. Click "+ Group" to add one.
+                    No cues in this segment. Click "+ Cue" to add one.
                   </div>
                 )}
               </div>

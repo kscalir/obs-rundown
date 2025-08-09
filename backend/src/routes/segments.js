@@ -132,3 +132,17 @@ router.post('/', (req, res) => {
 });
 
 module.exports = router;
+// Delete segment by ID
+router.delete('/:id', (req, res) => {
+  const { id } = req.params;
+  db.run('DELETE FROM rundown_segments WHERE id = ?', [id], function(err) {
+    if (err) {
+      console.error('Error deleting segment:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Segment not found' });
+    }
+    res.json({ success: true, id });
+  });
+});

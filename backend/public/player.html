@@ -3,183 +3,269 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Template Player</title>
+  <title id="page-title">OBS Rundown Player</title>
   <style>
-    body, html {
+    body {
       margin: 0;
       padding: 0;
-      width: 100%;
-      height: 100%;
+      background: transparent;
+      font-family: Arial, sans-serif;
       overflow: hidden;
-      background-color: transparent;
+      width: 100vw;
+      height: 100vh;
     }
-    
+
     #container {
+      position: relative;
       width: 100%;
       height: 100%;
-      position: relative;
+      background: transparent;
     }
     
-    iframe {
-      border: none;
+    .template-iframe {
       position: absolute;
-      width: 100%;
-      height: 100%;
       top: 0;
       left: 0;
-    }
-    
-    #status {
-      position: absolute;
-      bottom: 10px;
-      right: 10px;
-      background: rgba(0,0,0,0.5);
-      color: white;
-      padding: 5px 10px;
-      font-family: Arial, sans-serif;
-      font-size: 14px;
-      border-radius: 4px;
-      opacity: 0;
-      transition: opacity 0.5s ease;
-    }
-    
-    #status.visible {
-      opacity: 1;
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: transparent;
     }
   </style>
 </head>
 <body>
-  <div id="container">
-    <div id="status">Not connected</div>
-  </div>
-  
+  <div id="container"></div>
   <script>
     // Get channel from URL
     const urlParams = new URL(window.location.href).searchParams;
     const channel = urlParams.get('channel') || 1;
-    
-    // Status display
-    const status = document.getElementById('status');
-    
-    function showStatus(message) {
-      status.textContent = message;
-      status.classList.add('visible');
-      setTimeout(() => {
-        status.classList.remove('visible');
-      }, 3000);
-    }
-    
-    // Current template state
-    let currentTemplate = null;
-    let currentIframe = null;
-    
+
+    // Set channel in page title
+    document.title = `OBS Rundown Player Ch. ${channel}`;
+
+    // Layer management
+    const templateLayers = new Map();
+    let socket = null;
+
     // Connect to WebSocket
     function connectWebSocket() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws?channel=${channel}`;
-      
-      const socket = new WebSocket(wsUrl);
-      
+      const wsUrl = `${protocol}//${window.location.hostname}:5050/ws?channel=${channel}`;
+      console.log('Connecting to WebSocket:', wsUrl);
+      socket = new WebSocket(wsUrl);
+
       socket.onopen = () => {
-        showStatus(`Connected to channel ${channel}`);
+        console.log('WebSocket connected');
       };
-      
+
       socket.onclose = () => {
-        showStatus('Connection lost. Reconnecting...');
-        // Reconnect after delay
+        console.log('WebSocket disconnected, reconnecting...');
         setTimeout(connectWebSocket, 2000);
       };
-      
+
       socket.onerror = (error) => {
         console.error('WebSocket error:', error);
-        showStatus('Connection error');
       };
-      
+
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
+          console.log('Received message:', message);
           handleCommand(message);
         } catch (e) {
           console.error('Error parsing message:', e);
         }
       };
     }
-    
-    // Handle commands
+
+    // Handle commands from backend
     function handleCommand(message) {
-      const { command, templateId, data } = message;
-      
-      switch (command) {
-        case 'play':
-          loadTemplate(templateId, data);
-          break;
-          
-        case 'update':
-          updateTemplate(data);
-          break;
-          
-        case 'stop':
-          if (currentIframe) {
-            currentIframe.contentWindow.postMessage({ command: 'stop' }, '*');
-          }
-          break;
-          
-        case 'clear':
-          clearTemplate();
-          break;
-      }
-      
-      showStatus(`Command: ${command}`);
-    }
-    
-    // Load a template
-    function loadTemplate(templateId, data) {
-      if (currentTemplate === templateId && currentIframe) {
-        // Template already loaded, just update data and play
-        updateTemplate(data);
-        currentIframe.contentWindow.postMessage({ command: 'play' }, '*');
+      console.log('=== PROCESSING COMMAND ===');
+      console.log('Message:', message);
+
+      const { command, channel: msgChannel, layer, template, templateId, data, originalData } = message;
+
+      // Check if this message is for our channel
+      if (msgChannel && msgChannel !== parseInt(channel)) {
+        console.log('Message not for this channel:', msgChannel, 'vs', channel);
         return;
       }
-      
-      // Remove current template if different
-      if (currentIframe) {
-        currentIframe.remove();
+
+      console.log('Command:', command, 'TemplateId:', template || templateId);
+
+      // Handle AMCP commands
+      switch (command) {
+        case 'CG_ADD':
+          addTemplate(template || templateId, layer || 1, originalData, message.playOnLoad);
+          break;
+        case 'CG_PLAY':
+          playTemplate(layer || 1);
+          break;
+        case 'CG_STOP':
+          stopTemplate(layer || 1);
+          break;
+        case 'CG_REMOVE':
+          removeTemplate(layer || 1);
+          break;
+        case 'CG_CLEAR':
+          clearAllTemplates();
+          break;
+        case 'CG_UPDATE':
+          updateTemplate(layer || 1, originalData);
+          break;
+        case 'CG_NEXT':
+          nextTemplate(layer || 1);
+          break;
+        case 'CG_INVOKE':
+          invokeTemplate(layer || 1, message.method);
+          break;
+        // Legacy command support
+        case 'play':
+          addTemplate(templateId, 1, originalData || data, true);
+          break;
+        case 'update':
+          updateTemplate(1, originalData || data);
+          break;
+        case 'stop':
+          stopTemplate(1);
+          break;
+        case 'clear':
+          removeTemplate(1);
+          break;
+        default:
+          console.log('Unknown command:', command);
       }
-      
-      // Create new iframe
-      currentIframe = document.createElement('iframe');
-      currentIframe.src = `/templates/${templateId}/index.html`;
-      document.getElementById('container').appendChild(currentIframe);
-      
-      // Wait for iframe to load before sending data
-      currentIframe.onload = () => {
-        currentTemplate = templateId;
-        updateTemplate(data);
-        currentIframe.contentWindow.postMessage({ command: 'play' }, '*');
+    }
+
+    function addTemplate(templateId, layer, data, playOnLoad = true) {
+      console.log('Adding template:', templateId, 'to layer', layer);
+      console.log('Data:', data);
+      console.log('PlayOnLoad:', playOnLoad);
+
+      if (!templateId) {
+        console.error('No templateId provided');
+        return;
+      }
+
+      // Only remove existing template if there is one
+      const existingTemplate = templateLayers.get(layer);
+      if (existingTemplate) {
+        console.log('Removing existing template from layer', layer);
+        existingTemplate.iframe.remove();
+        templateLayers.delete(layer);
+      }
+
+      // Create iframe for template
+      const iframe = document.createElement('iframe');
+      iframe.className = 'template-iframe';
+      iframe.style.zIndex = layer;
+      iframe.src = `/templates/${templateId}/${templateId}.html`;
+
+      iframe.onload = () => {
+        console.log('Template iframe loaded successfully');
+        // Send initial data
+        if (data) {
+          setTimeout(() => {
+            console.log('Sending data to template:', data);
+            iframe.contentWindow.postMessage(data, '*');
+          }, 100);
+        }
+        // Auto-play if requested
+        if (playOnLoad) {
+          setTimeout(() => {
+            console.log('Sending play command to template');
+            iframe.contentWindow.postMessage({ command: 'play' }, '*');
+          }, 200);
+        }
       };
+
+      iframe.onerror = () => {
+        console.error('Failed to load template:', templateId);
+      };
+
+      document.getElementById('container').appendChild(iframe);
+
+      templateLayers.set(layer, {
+        iframe,
+        templateId,
+        data,
+        state: playOnLoad ? 'playing' : 'loaded'
+      });
     }
-    
-    // Update template with new data
-    function updateTemplate(data) {
-      if (currentIframe) {
-        currentIframe.contentWindow.postMessage({ command: 'data', data }, '*');
+
+    function playTemplate(layer) {
+      const template = templateLayers.get(layer);
+      if (template && template.iframe) {
+        console.log('Playing template on layer', layer);
+        template.iframe.contentWindow.postMessage({ command: 'play' }, '*');
+        template.state = 'playing';
+      } else {
+        console.log('No template found on layer', layer);
       }
     }
-    
-    // Clear template
-    function clearTemplate() {
-      if (currentIframe) {
-        currentIframe.remove();
-        currentIframe = null;
-        currentTemplate = null;
+
+    function stopTemplate(layer) {
+      const template = templateLayers.get(layer);
+      if (template && template.iframe) {
+        console.log('Stopping template on layer', layer);
+        template.iframe.contentWindow.postMessage({ command: 'stop' }, '*');
+        template.state = 'stopped';
       }
     }
-    
+
+    function removeTemplate(layer) {
+      const template = templateLayers.get(layer);
+      if (template && template.iframe) {
+        console.log('Removing template from layer', layer);
+        template.iframe.remove();
+        templateLayers.delete(layer);
+      }
+    }
+
+    function clearAllTemplates() {
+      console.log('Clearing all templates');
+      templateLayers.forEach((template, layer) => {
+        template.iframe.remove();
+      });
+      templateLayers.clear();
+    }
+
+    function updateTemplate(layer, data) {
+      const template = templateLayers.get(layer);
+      if (template && template.iframe) {
+        console.log('Updating template on layer', layer, 'with data:', data);
+        template.iframe.contentWindow.postMessage(data, '*');
+        template.data = { ...template.data, ...data };
+      }
+    }
+
+    function nextTemplate(layer) {
+      const template = templateLayers.get(layer);
+      if (template && template.iframe) {
+        console.log('Next state for template on layer', layer);
+        template.iframe.contentWindow.postMessage({ command: 'next' }, '*');
+      }
+    }
+
+    function invokeTemplate(layer, method) {
+      const template = templateLayers.get(layer);
+      if (template && template.iframe) {
+        console.log('Invoking method', method, 'on layer', layer);
+        template.iframe.contentWindow.postMessage({ command: 'invoke', method }, '*');
+      }
+    }
+
     // Start WebSocket connection
     connectWebSocket();
-    
-    // Show initial status
-    showStatus(`Channel ${channel} - Waiting for connection...`);
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        clearAllTemplates();
+      }
+    });
+
+    console.log(`Player initialized for channel ${channel}`);
   </script>
 </body>
 </html>

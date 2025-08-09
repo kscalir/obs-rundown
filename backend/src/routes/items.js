@@ -155,3 +155,17 @@ router.post('/', (req, res) => {
 });
 
 module.exports = router;
+// Delete item by ID
+router.delete('/:id', (req, res) => {
+  const { id } = req.params;
+  db.run('DELETE FROM rundown_items WHERE id = ?', [id], function(err) {
+    if (err) {
+      console.error('Error deleting item:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    res.json({ success: true, id });
+  });
+});

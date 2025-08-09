@@ -136,5 +136,19 @@ router.post('/', (req, res) => {
     });
   });
 });
+// Delete group by ID
+router.delete('/:id', (req, res) => {
+  const { id } = req.params;
+  db.run('DELETE FROM rundown_groups WHERE id = ?', [id], function(err) {
+    if (err) {
+      console.error('Error deleting group:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+    res.json({ success: true, id });
+  });
+});
 
 module.exports = router;

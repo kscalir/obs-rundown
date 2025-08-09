@@ -119,7 +119,7 @@ export default function ModulesPanel({ onModuleSelected }) {
                 borderTop: "1px solid #eee",
                 paddingTop: "10px"
               }}>
-                Drag modules to groups in the rundown
+                Drag modules to cues in the rundown
               </div>
             </div>
           )}

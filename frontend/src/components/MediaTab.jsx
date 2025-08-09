@@ -12,9 +12,8 @@ function getFileType(media) {
 
 function getMediaUrl(media) {
   if (!media.filename) return "";
-  // Make sure we're using absolute paths for both media and thumbnails
-  const basePath = 'http://localhost:5050/media';
-  return `${basePath}/${media.filename}`;
+  // Use API_BASE_URL instead of hardcoded URL
+  return `${API_BASE_URL}/media/${media.filename}`;
 }
 
 const FILTER_OPTIONS = [
@@ -45,7 +44,8 @@ export default function MediaTab({ showId, onMediaUploaded }) {
       setFilteredList([]);
       return;
     }
-    let url = `${API_BASE_URL}/api/shows/${showId}/media`;
+    // Change this line to use the correct route pattern:
+    let url = `${API_BASE_URL}/api/media/show/${showId}`;
     const params = [];
     if (typeFilter) params.push(`type=${encodeURIComponent(typeFilter)}`);
     if (search.trim()) params.push(`search=${encodeURIComponent(search.trim())}`);
@@ -86,12 +86,12 @@ export default function MediaTab({ showId, onMediaUploaded }) {
     setUploadError(null);
     const formData = new FormData();
     formData.append("file", newMediaFile);
-    // Change this line to match server expectation
-    formData.append("showId", showId); // Changed from "show_id" to "showId"
+    formData.append("showId", showId);
     formData.append("name", newMediaName || newMediaFile.name);
 
     try {
-      const res = await fetch("http://localhost:5050/api/media", {
+      // Use API_BASE_URL instead of hardcoded URL:
+      const res = await fetch(`${API_BASE_URL}/api/media`, {
         method: "POST",
         body: formData,
       });
@@ -113,7 +113,8 @@ export default function MediaTab({ showId, onMediaUploaded }) {
     if (!window.confirm("Delete this media file?")) return;
     setDeletingId(mediaId);
     try {
-      const res = await fetch(`http://localhost:5050/api/media/${mediaId}`, { method: "DELETE" });
+      // Use API_BASE_URL instead of hardcoded URL:
+      const res = await fetch(`${API_BASE_URL}/api/media/${mediaId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
       setDeletingId(null);
       if (onMediaUploaded) onMediaUploaded();
@@ -146,6 +147,41 @@ export default function MediaTab({ showId, onMediaUploaded }) {
   const handleEditCancel = () => {
     setEditingId(null);
     setEditingName("");
+  };
+
+  const [hoverPreview, setHoverPreview] = useState(null);
+  const [hoverPosition, setHoverPosition] = useState({ x: 0, y: 0 });
+
+  const handleMouseEnter = (media, event) => {
+    const type = getFileType(media);
+    if (type === 'image' || type === 'video') {
+      setHoverPreview(media);
+      setHoverPosition({ 
+        x: event.clientX, 
+        y: event.clientY + 20  // Changed: position below cursor instead of above
+      });
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setHoverPreview(null);
+  };
+
+  const handleMouseMove = (event) => {
+    if (hoverPreview) {
+      setHoverPosition({ 
+        x: event.clientX, 
+        y: event.clientY + 20  // Changed: position below cursor instead of above
+      });
+    }
+  };
+
+  // --- Add a helper function to format duration:
+  const formatDuration = (seconds) => {
+    if (!seconds) return '';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // --- Render
@@ -303,7 +339,7 @@ return (
             const url = getMediaUrl(media);
             const type = getFileType(media);
             const thumbUrl = media.thumb 
-              ? `http://localhost:5050/media/thumbs/${media.thumb}` 
+              ? `${API_BASE_URL}/media/thumbs/${media.thumb}` 
               : getMediaUrl(media);
             const displayName = media.displayName || media.name || media.originalname || media.filename;
 
@@ -350,19 +386,25 @@ return (
                 {/* IMAGE THUMBNAIL */}
                 {type === "image" && media.thumb && (
                   <>
-                    <div style={{
-                      width: 160,
-                      height: 90,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      marginBottom: 3,
-                      background: "#fff",
-                      borderRadius: 8,
-                      border: "1px solid #e0e0e0",
-                      overflow: "hidden",
-                      aspectRatio: "16 / 9"
-                    }}>
+                    <div 
+                      style={{
+                        width: 160,
+                        height: 90,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginBottom: 3,
+                        background: "#fff",
+                        borderRadius: 8,
+                        border: "1px solid #e0e0e0",
+                        overflow: "hidden",
+                        aspectRatio: "16 / 9",
+                        cursor: "zoom-in"
+                      }}
+                      onMouseEnter={(e) => handleMouseEnter(media, e)}
+                      onMouseLeave={handleMouseLeave}
+                      onMouseMove={handleMouseMove}
+                    >
                       <img
                         src={thumbUrl}
                         alt={displayName}
@@ -430,18 +472,24 @@ return (
                 {/* VIDEO - 16:9 preview */}
                 {type === "video" && (
                   <>
-                    <div style={{
-                      width: 160,
-                      height: 90,
-                      background: "#000",
-                      borderRadius: 8,
-                      marginBottom: 3,
-                      overflow: "hidden",
-                      aspectRatio: "16 / 9",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center"
-                    }}>
+                    <div 
+                      style={{
+                        width: 160,
+                        height: 90,
+                        background: "#000",
+                        borderRadius: 8,
+                        marginBottom: 3,
+                        overflow: "hidden",
+                        aspectRatio: "16 / 9",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "zoom-in"
+                      }}
+                      onMouseEnter={(e) => handleMouseEnter(media, e)}
+                      onMouseLeave={handleMouseLeave}
+                      onMouseMove={handleMouseMove}
+                    >
                       <video
                         src={url}
                         controls
@@ -555,10 +603,104 @@ return (
                     [Graphics]
                   </span>
                 )}
+                <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                  {media.type && (
+                    <span style={{ 
+                      background: "#e3f2fd", 
+                      color: "#1976d2", 
+                      padding: "2px 6px", 
+                      borderRadius: 3,
+                      marginRight: 8
+                    }}>
+                      {media.type}
+                    </span>
+                  )}
+                  {media.duration && (
+                    <span>Duration: {formatDuration(media.duration)}</span>
+                  )}
+                </div>
               </li>
             );
           })}
         </ul>
+      )}
+
+      {/* Hover Preview - Image/Video */}
+      {hoverPreview && (
+        <div style={{
+          position: "fixed",
+          pointerEvents: "none",
+          zIndex: 2000,
+          top: hoverPosition.y,
+          left: hoverPosition.x,
+          transform: "translate(-50%, 0)",  // Changed: only center horizontally, no vertical offset
+          fontSize: 14,
+          borderRadius: 8,
+          overflow: "hidden",
+          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+          background: "white",
+          padding: 8,
+          maxWidth: 500,  // Changed: increased from 300 to 500
+          width: "auto",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center"
+        }}>
+          {getFileType(hoverPreview) === "image" && hoverPreview.thumb && (
+            <img
+              src={`${API_BASE_URL}/media/thumbs/${hoverPreview.thumb}`}
+              alt={hoverPreview.displayName}
+              style={{
+                maxWidth: "480px",  // Changed: increased from 100% to specific larger size
+                maxHeight: "360px", // Changed: increased height
+                width: "auto",
+                height: "auto",
+                objectFit: "cover",
+                borderRadius: 4,
+                marginBottom: 8,
+                border: "1px solid #e0e0e0"
+              }}
+            />
+          )}
+          {getFileType(hoverPreview) === "video" && (
+            <video
+              src={getMediaUrl(hoverPreview)}
+              style={{
+                maxWidth: "480px",  // Changed: increased from 100% to specific larger size
+                maxHeight: "360px", // Changed: increased height
+                width: "auto",
+                height: "auto",
+                objectFit: "cover",
+                borderRadius: 4,
+                marginBottom: 8,
+                border: "1px solid #e0e0e0"
+              }}
+              autoPlay    // Added: auto-play for video previews
+              muted       // Added: muted so it can autoplay
+              loop        // Added: loop the video
+            />
+          )}
+          <div style={{ textAlign: "center" }}>
+            <strong>{hoverPreview.displayName || hoverPreview.name}</strong>
+            <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+              {hoverPreview.type && (
+                <span style={{ 
+                  background: "#e3f2fd", 
+                  color: "#1976d2", 
+                  padding: "2px 6px", 
+                  borderRadius: 3,
+                  marginRight: 8
+                }}>
+                  {hoverPreview.type}
+                </span>
+              )}
+              {hoverPreview.duration && (
+                <span>Duration: {formatDuration(hoverPreview.duration)}</span>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

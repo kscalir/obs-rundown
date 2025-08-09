@@ -33,9 +33,24 @@ app.use('/api/groups', groupsRouter);
 app.use('/api/items', itemsRouter);
 app.use('/api', rundownRouter);
 app.use('/api/graphics', graphicsRouter);
+app.use('/api/media', require('./src/routes/media'));
+app.use('/api/obs', require('./src/routes/obs'));
+
+// Serve static files for uploads
+app.use('/media', express.static(path.join(__dirname, 'media')));
+app.use('/media/thumbs', express.static(path.join(__dirname, 'media/thumbs')));
+
+// Serve static files from public directory (for player.html)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve templates directory
+app.use('/templates', express.static(path.join(__dirname, 'templates')));
 
 // WebSocket setup
 const wss = new WebSocket.Server({ server });
+
+// Make WebSocket server globally available
+global.wss = wss;
 
 // Handle WebSocket connections
 wss.on('connection', (ws, req) => {
@@ -44,11 +59,14 @@ wss.on('connection', (ws, req) => {
   
   console.log(`WebSocket client connected to channel ${channel}`);
   
+  // Store channel info on the WebSocket
+  ws.channel = channel;
+  
   ws.on('close', () => {
     console.log(`WebSocket client disconnected from channel ${channel}`);
   });
   
-  ws.send(JSON.stringify({ type: 'connection', status: 'connected' }));
+  ws.send(JSON.stringify({ type: 'connection', status: 'connected', channel }));
 });
 
 // Start server
