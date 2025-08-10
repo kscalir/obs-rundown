@@ -195,15 +195,14 @@ export default function MediaTab({ showId, onMediaUploaded }) {
 return (
     <div
       style={{
-        background: "#fff",
-        padding: "32px 0",
-        overflow: "auto",
-        boxSizing: "border-box",
+        background: "#fafdff",
         minWidth: 0,
         display: "flex",
         flexDirection: "column",
         width: "100%",
-        height: "auto"
+        height: "100%",
+        boxSizing: "border-box",
+        overflow: "hidden"
       }}
     >
       {/* Add Controls Bar */}
@@ -212,19 +211,27 @@ return (
         alignItems: "center", 
         gap: 16, 
         marginBottom: 24,
-        padding: "0 32px"
+        padding: "18px 32px 0 32px",
+        background: "#fafdff"
       }}>
         <button 
           onClick={openUploadModal}
           style={{
-            fontWeight: 600,
-            padding: "8px 16px",
-            borderRadius: 6,
-            background: "#1976d2",
-            color: "white",
-            border: "none",
-            cursor: "pointer"
+            background: "#e3f2fd",
+            color: "#1976d2",
+            border: "1px solid #b1c7e7",
+            borderRadius: 8,
+            padding: "4px 14px",
+            fontWeight: 500,
+            fontSize: 15,
+            marginRight: 18,
+            marginTop: 2,
+            cursor: "pointer",
+            boxShadow: "none",
+            transition: "background 0.15s, border 0.15s"
           }}
+          onMouseEnter={e => e.currentTarget.style.background = '#1565c0'}
+          onMouseLeave={e => e.currentTarget.style.background = '#1976d2'}
         >
           + Add Media
         </button>
@@ -355,7 +362,7 @@ return (
                   justifyContent: "flex-start",
                   border: "1px solid #eee",
                   borderRadius: 12,
-                  background: "#fafaff",
+                  background: "#fafdff",
                   padding: 8,
                   boxShadow: "0 2px 10px 0 #e4e8ed22",
                   position: "relative",
@@ -394,7 +401,7 @@ return (
                         alignItems: "center",
                         justifyContent: "center",
                         marginBottom: 3,
-                        background: "#fff",
+                        background: "#fafdff",
                         borderRadius: 8,
                         border: "1px solid #e0e0e0",
                         overflow: "hidden",
@@ -560,7 +567,7 @@ return (
                         style={{
                           width: "95%",
                           maxWidth: "95%",
-                          background: "#fafaff",
+                          background: "#fafdff",
                           borderRadius: 6,
                         }}
                       />

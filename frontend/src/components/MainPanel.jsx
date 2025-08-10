@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import MediaTab from "./MediaTab";
 import RundownView from "./RundownView";
+import ShowsHome from "./ShowsHome";
 import { API_BASE_URL } from "../config";
 
 // --- Constants ---
@@ -82,72 +83,25 @@ function TabButton({ name, label, isActive, onClick }) {
 }
 
 // --- Main Component ---
-export default function MainPanel({ showId, onDragEnd }) {
-  // Initialize activeTab from localStorage if available
-  const [activeTab, setActiveTab] = React.useState(() => {
-    if (!showId) return "media";
-    try {
-      const tabState = getTabStateObject();
-      return tabState[String(showId)] || "media";
-    } catch {
-      return "media";
-    }
-  });
 
-  // Update activeTab when showId changes
-  React.useEffect(() => {
-    if (!showId) {
-      setActiveTab("media");
-      return;
-    }
-    const showIdStr = String(showId);
-    const tabState = getTabStateObject();
-    if (tabState[showIdStr] && (tabState[showIdStr] === "media" || tabState[showIdStr] === "rundown")) {
-      setActiveTab(tabState[showIdStr]);
-    } else {
-      setActiveTab("media");
-    }
-  }, [showId]);
-
-  // Persist activeTab to localStorage
-  React.useEffect(() => {
-    if (!showId) return;
-    const showIdStr = String(showId);
-    const tabState = getTabStateObject();
-    tabState[showIdStr] = activeTab;
-    saveTabStateObject(tabState);
-  }, [activeTab, showId]);
-
-  // Handle tab click
-  const handleTabClick = (tabName) => () => setActiveTab(tabName);
+export default function MainPanel({ showId, showName, onDragEnd, onBackToShows, selectedTab = "media" }) {
+  if (!showId) {
+    // If no showId, render nothing (parent controls show selection)
+    return null;
+  }
 
   return (
     <div style={STYLES.container}>
-      {/* Tab Bar */}
-      <div style={STYLES.tabBar}>
-        <TabButton
-          name="media"
-          label="Media Ingest"
-          isActive={activeTab === "media"}
-          onClick={handleTabClick("media")}
-        />
-        <TabButton
-          name="rundown"
-          label="Rundown"
-          isActive={activeTab === "rundown"}
-          onClick={handleTabClick("rundown")}
-        />
-      </div>
-
-      {/* Content Area */}
       <div style={STYLES.content}>
-        {activeTab === "media" ? (
-          <MediaTab showId={showId} />
+        {selectedTab === "media" ? (
+          <MediaTab showId={showId} onBackToShows={onBackToShows} />
         ) : (
           <RundownView 
             showId={showId} 
-            selectedTab={activeTab} 
-            onDragEnd={onDragEnd} 
+            showName={showName}
+            selectedTab={selectedTab} 
+            onDragEnd={onDragEnd}
+            onBackToShows={onBackToShows}
           />
         )}
       </div>

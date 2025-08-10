@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Main Page Wireframe Mockup (Draggable Panels)</title>
+  <style>
+    .cue-content {
+      padding-bottom: 16px;
+    }
+    .segment-content {
+      padding-bottom: 24px;
+    }
+    /* Rundown Styling */
+    .rundown-container {
+      padding: 0 0 48px 0;
+    }
+    .segment {
+      background: #e3f2fd;
+      border-radius: 10px;
+      margin-bottom: 18px;
+      box-shadow: 0 2px 8px rgba(25,118,210,0.07);
+      padding: 0 24px 0 0;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .segment-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      font-weight: 700;
+      font-size: 1.18rem;
+      color: #1976d2;
+      cursor: pointer;
+    }
+    .segment-header .arrow {
+      margin-right: 12px;
+      font-size: 1.2em;
+      transition: transform 0.2s;
+    }
+    .segment.collapsed .arrow {
+      transform: rotate(-90deg);
+    }
+    .add-segment-btn {
+      background: #1976d2;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 18px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      cursor: pointer;
+    }
+    .cue-group {
+      background: #fafdff;
+      border-radius: 8px;
+      margin: 12px 24px 12px 24px;
+      box-shadow: 0 1px 4px rgba(25,118,210,0.05);
+      padding: 0;
+    }
+    .cue-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 18px;
+      font-weight: 600;
+      color: #1565c0;
+      cursor: pointer;
+    }
+    .cue-header .arrow {
+      margin-right: 10px;
+      font-size: 1em;
+      transition: transform 0.2s;
+    }
+    .cue-group.collapsed .arrow {
+      transform: rotate(-90deg);
+    }
+    .add-cue-btn {
+      background: #1565c0;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 5px 14px;
+      font-weight: 500;
+      margin: 8px 0 8px 18px;
+      cursor: pointer;
+    }
+    .rundown-item {
+      background: #fff;
+      border-radius: 6px;
+      margin: 8px 18px;
+      padding: 10px 18px;
+      color: #333;
+      font-weight: 500;
+      box-shadow: 0 1px 4px rgba(25,118,210,0.07);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .rundown-item .icon {
+      width: 22px;
+      height: 22px;
+      background: #e3f2fd;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    body {
+      margin: 0;
+      font-family: 'Inter', Arial, sans-serif;
+      background: #f5f7fa;
+      overflow: hidden;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 32px;
+      background: #f5f7fa;
+      border-bottom: 1.5px solid #e1e6ec;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .back-btn {
+      background: #1976d2;
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 8px 22px;
+      font-weight: 600;
+      font-size: 1.08rem;
+      cursor: pointer;
+      box-shadow: 0 1px 4px rgba(25, 118, 210, 0.10);
+    }
+    .show-name {
+      font-weight: 700;
+      font-size: 1.32rem;
+      color: #1976d2;
+      letter-spacing: -0.5px;
+    }
+    .episode-select {
+      font-size: 1rem;
+      padding: 7px 14px;
+      border-radius: 8px;
+      border: 1.5px solid #b1c7e7;
+      background: #fff;
+      color: #1976d2;
+      font-weight: 500;
+    }
+    .main-layout {
+      display: flex;
+      height: calc(100vh - 62px);
+      min-width: 0;
+      width: 100vw;
+      position: relative;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .panel {
+      height: 100%;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 80px;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .toolbox {
+      background: #e3f2fd;
+      border-right: 1.5px solid #e1e6ec;
+      padding: 18px 24px;
+      width: var(--toolbox-width, 220px);
+      transition: width 0.1s;
+    }
+    .center-panel {
+      background: #fafdff;
+      border-right: 1.5px solid #e1e6ec;
+      padding: 24px 0;
+      width: var(--center-width, 100%);
+      transition: width 0.1s;
+      min-width: 120px;
+      flex: 1;
+    }
+    .properties-panel {
+      background: #fafdff;
+      padding: 24px;
+      border-left: 1.5px solid #e1e6ec;
+      width: var(--properties-width, 350px);
+      min-width: 120px;
+      transition: width 0.1s;
+    }
+    .toolbox-title {
+      font-weight: 600;
+      color: #1976d2;
+      margin-bottom: 10px;
+    }
+    .toolbox-item {
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px 24px 10px 24px;
+      color: #1976d2;
+      font-weight: 500;
+      box-shadow: 0 1px 4px rgba(25, 118, 210, 0.07);
+      margin-bottom: 6px;
+      width: 80%;
+      text-align: center;
+      cursor: pointer;
+    }
+    .tabs {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding-left: 32px;
+      border-bottom: 2px solid #e1e6ec;
+    }
+    .tab-btn {
+      background: none;
+      color: #1976d2;
+      border: none;
+      border-bottom: 3px solid transparent;
+      border-radius: 0;
+      padding: 10px 0 8px 0;
+      font-weight: 600;
+      font-size: 1.08rem;
+      cursor: pointer;
+      transition: color 0.2s, border-bottom 0.2s;
+    }
+    .tab-btn.active {
+      color: #1976d2;
+      border-bottom: 3px solid #1976d2;
+    }
+    .rundown-content {
+      width: 100%;
+      max-width: 100%;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(25, 118, 210, 0.07);
+      padding: 24px;
+      margin-bottom: 18px;
+      min-height: 220px;
+      text-align: left;
+      box-sizing: border-box;
+      max-height: 100%;
+      overflow-y: auto;
+    }
+    .properties-title {
+      font-weight: 600;
+      color: #1976d2;
+      margin-bottom: 10px;
+    }
+    .property-item {
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px 18px;
+      color: #333;
+      font-weight: 500;
+      box-shadow: 0 1px 4px rgba(25, 118, 210, 0.07);
+      margin-bottom: 6px;
+      display: block;
+    }
+    .drag-handle {
+      position: absolute;
+      top: 0;
+      right: -6px;
+      width: 12px;
+      height: 100%;
+      cursor: ew-resize;
+      z-index: 10;
+      background: linear-gradient(90deg, #e1e6ec 60%, #fafdff 100%);
+      border-radius: 6px;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    }
+    .drag-handle:hover {
+      opacity: 1;
+      background: linear-gradient(90deg, #1976d2 60%, #fafdff 100%);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <button class="back-btn">Back to Show List</button>
+      <span class="show-name">Show Name</span>
+    </div>
+    <select class="episode-select">
+      <option>Episode 1</option>
+      <option>Episode 2</option>
+      <option>Episode 3</option>
+    </select>
+  </div>
+  <div class="main-layout" id="mainLayout">
+    <div class="panel toolbox" id="toolboxPanel">
+      <div class="toolbox-title">Module Toolbox</div>
+      <div class="toolbox-item">Module 1</div>
+      <div class="toolbox-item">Module 2</div>
+      <div class="toolbox-item">Module 3</div>
+      <div class="drag-handle" id="toolboxHandle"></div>
+    </div>
+    <div class="panel center-panel" id="centerPanel">
+      <div class="tabs">
+        <button class="tab-btn active">Rundown</button>
+        <button class="tab-btn">Media Ingest</button>
+      </div>
+      <div class="rundown-content">
+        <div class="rundown-container">
+          <button class="add-segment-btn">+ Add Segment</button>
+          <div class="segment" id="segment1">
+            <div class="segment-header" onclick="toggleSegment('segment1')">
+              <span class="arrow">&#9660;</span> Segment 1: Opening
+            </div>
+            <div class="segment-content">
+              <button class="add-cue-btn">+ Add Cue</button>
+              <div class="cue-group" id="cue1">
+                <div class="cue-header" onclick="toggleCue('cue1')">
+                  <span class="arrow">&#9654;</span> Cue 1: Intro Group
+                </div>
+                <div class="cue-content">
+                  <div class="rundown-item"><span class="icon"></span> Module: Video Intro</div>
+                  <div class="rundown-item"><span class="icon"></span> Module: Lower Third</div>
+                </div>
+              </div>
+              <div class="cue-group" id="cue2">
+                <div class="cue-header" onclick="toggleCue('cue2')">
+                  <span class="arrow">&#9654;</span> Cue 2: Host Group
+                </div>
+                <div class="cue-content">
+                  <div class="rundown-item"><span class="icon"></span> Module: Host Camera</div>
+                  <div class="rundown-item"><span class="icon"></span> Module: Audio Mixer</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="segment" id="segment2">
+            <div class="segment-header" onclick="toggleSegment('segment2')">
+              <span class="arrow">&#9660;</span> Segment 2: Interview
+            </div>
+            <div class="segment-content">
+              <button class="add-cue-btn">+ Add Cue</button>
+              <div class="cue-group" id="cue3">
+                <div class="cue-header" onclick="toggleCue('cue3')">
+                  <span class="arrow">&#9654;</span> Cue 1: Guest Group
+                </div>
+                <div class="cue-content">
+                  <div class="rundown-item"><span class="icon"></span> Module: Guest Camera</div>
+                  <div class="rundown-item"><span class="icon"></span> Module: Guest Lower Third</div>
+                </div>
+              </div>
+              <div class="cue-group" id="cue4">
+                <div class="cue-header" onclick="toggleCue('cue4')">
+                  <span class="arrow">&#9654;</span> Cue 2: Interview Group
+                </div>
+                <div class="cue-content">
+                  <div class="rundown-item"><span class="icon"></span> Module: Interview Questions</div>
+                  <div class="rundown-item"><span class="icon"></span> Module: Timer</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="segment" id="segment3">
+            <div class="segment-header" onclick="toggleSegment('segment3')">
+              <span class="arrow">&#9660;</span> Segment 3: Closing
+            </div>
+            <div class="segment-content">
+              <button class="add-cue-btn">+ Add Cue</button>
+              <div class="cue-group" id="cue5">
+                <div class="cue-header" onclick="toggleCue('cue5')">
+                  <span class="arrow">&#9654;</span> Cue 1: Wrap Up Group
+                </div>
+                <div class="cue-content">
+                  <div class="rundown-item"><span class="icon"></span> Module: Closing Remarks</div>
+                  <div class="rundown-item"><span class="icon"></span> Module: Credits Roll</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="drag-handle" id="centerHandle"></div>
+    </div>
+    <div class="panel properties-panel" id="propertiesPanel">
+      <div style="display: flex; flex-direction: column; width: 100%;">
+        <div class="properties-title">OBS Scene: <span style="color:#1565c0">Show Open</span></div>
+        <div class="property-item" style="background:#fff;padding:18px 18px 12px 18px;">
+          <div style="font-weight:600;color:#1976d2;margin-bottom:8px;">Scene Screenshot Preview</div>
+          <div id="obsScenePreview" style="position:relative;width:100%;max-width:320px;height:180px;background:#e3f2fd;border-radius:12px;box-shadow:0 2px 8px rgba(25,118,210,0.10);border:1.5px solid #b1c7e7;overflow:hidden;margin-bottom:8px;"></div>
+          <div style="color:#888;font-size:0.98rem;text-align:center;">Live preview of scene layout. Source boxes are auto-labeled.</div>
+        </div>
+        <div class="property-item" style="background:#e3f2fd;">
+          <label for="transitionSelect"><strong>Transition</strong></label><br>
+          <select id="transitionSelect" style="width:100%;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;" onchange="showTransitionDuration()">
+            <option value="cut">Cut</option>
+            <option value="fade">Fade</option>
+            <option value="stinger1">Stinger 1</option>
+            <option value="stinger2">Stinger 2</option>
+            <option value="stinger3">Stinger 3</option>
+          </select>
+          <div id="transitionDurationContainer">
+            <label for="transitionDuration" style="margin-top:12px;display:block;"><strong>Transition Duration (sec)</strong></label>
+            <input id="transitionDuration" type="number" min="0" max="5" step="0.1" value="0.5" style="width:100px;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;">
+          </div>
+        </div>
+        <!-- Removed obsolete Sources dropdown (Graphics/Video Input Source) -->
+        <div class="property-item">
+          <!-- No 'Active' checkbox for video/graphics -->
+        </div>
+        <div id="sourceProperties"></div>
+      </div>
+      <div class="drag-handle" id="propertiesHandle"></div>
+    </div>
+  </div>
+  <script>
+    // Drag logic for panels
+    // Show/hide transition duration based on transition type
+    function showTransitionDuration() {
+      const select = document.getElementById('transitionSelect');
+      const container = document.getElementById('transitionDurationContainer');
+      if (select.value === 'cut') {
+        container.style.display = 'none';
+      } else {
+        container.style.display = 'block';
+      }
+    }
+    // Initialize transition duration visibility on load
+    window.onload = function() {
+      showTransitionDuration();
+      showSourceProperties();
+    };
+    const toolboxPanel = document.getElementById('toolboxPanel');
+    const centerPanel = document.getElementById('centerPanel');
+    const propertiesPanel = document.getElementById('propertiesPanel');
+    const toolboxHandle = document.getElementById('toolboxHandle');
+    const centerHandle = document.getElementById('centerHandle');
+    const propertiesHandle = document.getElementById('propertiesHandle');
+
+    let dragging = null;
+    let startX = 0;
+    let startWidths = {};
+
+    function getPanelWidths() {
+      return {
+        toolbox: toolboxPanel.offsetWidth,
+        center: centerPanel.offsetWidth,
+        properties: propertiesPanel.offsetWidth
+      };
+    }
+
+    function setPanelWidths(toolboxW, centerW, propertiesW) {
+      toolboxPanel.style.width = toolboxW + 'px';
+      centerPanel.style.width = centerW + 'px';
+      propertiesPanel.style.width = propertiesW + 'px';
+    }
+
+    toolboxHandle.addEventListener('mousedown', function(e) {
+      dragging = 'toolbox';
+      startX = e.clientX;
+      startWidths = getPanelWidths();
+      document.body.style.cursor = 'ew-resize';
+    });
+    centerHandle.addEventListener('mousedown', function(e) {
+      dragging = 'center';
+      startX = e.clientX;
+      startWidths = getPanelWidths();
+      document.body.style.cursor = 'ew-resize';
+    });
+    propertiesHandle.addEventListener('mousedown', function(e) {
+      dragging = 'properties';
+      startX = e.clientX;
+      startWidths = getPanelWidths();
+      document.body.style.cursor = 'ew-resize';
+    });
+
+    document.addEventListener('mousemove', function(e) {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      let totalWidth = window.innerWidth;
+      let minToolbox = 120, maxToolbox = 400;
+      let minCenter = 120;
+      let minProperties = 120;
+      let toolboxW = startWidths.toolbox;
+      let centerW = startWidths.center;
+      let propertiesW = startWidths.properties;
+      if (dragging === 'toolbox') {
+        toolboxW = Math.max(minToolbox, Math.min(maxToolbox, startWidths.toolbox + dx));
+        let remaining = totalWidth - toolboxW - propertiesW;
+        centerW = Math.max(minCenter, remaining);
+        setPanelWidths(toolboxW, centerW, propertiesW);
+      } else if (dragging === 'center') {
+        centerW = Math.max(minCenter, startWidths.center + dx);
+        let remaining = totalWidth - toolboxW - centerW;
+        propertiesW = Math.max(minProperties, remaining);
+        setPanelWidths(toolboxW, centerW, propertiesW);
+      } else if (dragging === 'properties') {
+        propertiesW = Math.max(minProperties, startWidths.properties - dx);
+        let remaining = totalWidth - toolboxW - propertiesW;
+        centerW = Math.max(minCenter, remaining);
+        setPanelWidths(toolboxW, centerW, propertiesW);
+      }
+      document.getElementById('mainLayout').style.width = '100vw';
+      document.getElementById('mainLayout').style.height = 'calc(100vh - 62px)';
+    });
+    document.addEventListener('mouseup', function(e) {
+      if (dragging) {
+        document.body.style.cursor = '';
+        dragging = null;
+      }
+    });
+
+    // Expand/Collapse logic for rundown
+    function toggleSegment(id) {
+      const seg = document.getElementById(id);
+      seg.classList.toggle('collapsed');
+      seg.querySelector('.segment-content').style.display =
+        seg.classList.contains('collapsed') ? 'none' : 'block';
+    }
+    function toggleCue(id) {
+      const cue = document.getElementById(id);
+      cue.classList.toggle('collapsed');
+      cue.querySelector('.cue-content').style.display =
+        cue.classList.contains('collapsed') ? 'none' : 'block';
+    }
+
+    // --- Scene Box Data ---
+    // Box 3 is always Camera 5 (fixed by user design)
+    const sceneBoxes = [
+      {
+        id: 1,
+        label: 'Box 1',
+        color: '#ffcc80',
+        border: '#ffa726',
+        left: 18, top: 24, width: 90, height: 54,
+        source: '',
+      },
+      {
+        id: 2,
+        label: 'Box 2',
+        color: '#90caf9',
+        border: '#42a5f5',
+        left: 130, top: 24, width: 70, height: 54,
+        source: '',
+      },
+      {
+        id: 3,
+        label: 'Camera 5',
+        color: '#a5d6a7',
+        border: '#66bb6a',
+        left: 60, top: 100, width: 120, height: 40,
+        source: 'Camera 5', // always fixed
+      }
+    ];
+    let selectedSource = 'Box 1';
+    let selectedInput = '';
+
+
+function renderScenePreview() {
+  const preview = document.getElementById('obsScenePreview');
+  preview.innerHTML = '';
+  sceneBoxes.forEach(box => {
+    const div = document.createElement('div');
+    div.style.position = 'absolute';
+    div.style.left = box.left + 'px';
+    div.style.top = box.top + 'px';
+    div.style.width = box.width + 'px';
+    div.style.height = box.height + 'px';
+    div.style.background = box.color;
+    div.style.borderRadius = '8px';
+    div.style.border = '2px solid ' + box.border;
+    div.style.display = 'flex';
+    div.style.flexDirection = 'column';
+    div.style.alignItems = 'center';
+    div.style.justifyContent = 'flex-start';
+    div.style.fontWeight = '700';
+    div.style.fontSize = '1.1rem';
+    div.style.color = '#222';
+    div.style.cursor = 'pointer';
+    div.style.boxShadow = (selectedSource === box.label || selectedSource === box.source) ? '0 0 0 4px #1976d2' : '';
+    // Box number at top
+    const num = document.createElement('div');
+    num.textContent = box.id;
+    num.style.fontSize = '1.5rem';
+    num.style.fontWeight = '700';
+    num.style.marginTop = '6px';
+    div.appendChild(num);
+    // Source name underneath
+    const src = document.createElement('div');
+    // For Box 1 or Box 2, update label if selectedInput is set and selectedSource matches
+    if ((box.label === 'Box 1' || box.label === 'Box 2') && selectedSource === box.label && selectedInput) {
+      src.textContent = selectedInput;
+    } else if (box.id === 3) {
+      src.textContent = 'Camera 5';
+    } else {
+      src.textContent = box.label;
+    }
+    src.style.fontSize = '1rem';
+    src.style.fontWeight = '600';
+    src.style.marginTop = '8px';
+    div.appendChild(src);
+    preview.appendChild(div);
+  });
+}
+
+    function renderSourceProperties() {
+      const container = document.getElementById('sourceProperties');
+      container.innerHTML = '';
+      // Sources selector
+      const sourcesDiv = document.createElement('div');
+      sourcesDiv.className = 'property-item';
+      sourcesDiv.style.background = '#fff';
+      sourcesDiv.innerHTML = `
+        <label for='sourcesSelect'><strong>Sources</strong></label><br>
+        <select id='sourcesSelect' style='width:100%;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;'>
+          <option value='Box 1'>Box 1</option>
+          <option value='Box 2'>Box 2</option>
+          <option value='Camera 5'>Camera 5</option>
+        </select>
+      `;
+      container.appendChild(sourcesDiv);
+      const sourcesSelect = sourcesDiv.querySelector('#sourcesSelect');
+      sourcesSelect.value = selectedSource;
+      sourcesSelect.onchange = function() {
+        selectedSource = this.value;
+        selectedInput = '';
+        renderScenePreview();
+        renderSourceProperties();
+      };
+
+      // Input selector (only for Box 1/2)
+      if (selectedSource === 'Box 1' || selectedSource === 'Box 2') {
+        const inputDiv = document.createElement('div');
+        inputDiv.className = 'property-item';
+        inputDiv.style.background = '#e3f2fd';
+        inputDiv.innerHTML = `
+          <label for='inputSelect'><strong>Input</strong></label><br>
+          <select id='inputSelect' style='width:100%;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;'>
+            <option value='Camera 1'>Camera 1</option>
+            <option value='CG-1'>CG-1</option>
+            <option value='Video'>Video</option>
+          </select>
+        `;
+        container.appendChild(inputDiv);
+        const inputSelect = inputDiv.querySelector('#inputSelect');
+        inputSelect.value = selectedInput;
+        inputSelect.onchange = function() {
+          selectedInput = this.value;
+          renderSourceProperties();
+        };
+      }
+
+      // Properties for CG-1 and Video
+      if (selectedInput === 'CG-1') {
+        const propDiv = document.createElement('div');
+        propDiv.className = 'property-item';
+        propDiv.style.background = '#e3f2fd';
+        propDiv.innerHTML = `
+          <div style='font-weight:600;color:#1976d2;margin-bottom:8px;'>Graphics Properties</div>
+          <label for='graphicsType'><strong>Graphics Type</strong></label><br>
+          <select id='graphicsType' style='width:100%;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;'>
+            <option>Lower Third</option>
+            <option>Full Screen</option>
+            <option>Bug</option>
+            <option>Ticker</option>
+          </select>
+          <label for='headline' style='margin-top:12px;display:block;'><strong>Headline</strong></label>
+          <input id='headline' type='text' placeholder='Enter headline...' style='width:100%;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;'>
+          <label for='subheadline' style='margin-top:12px;display:block;'><strong>Subheadline</strong></label>
+          <input id='subheadline' type='text' placeholder='Enter subheadline...' style='width:100%;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;'>
+          <label for='color' style='margin-top:12px;display:block;'><strong>Accent Color</strong></label>
+          <input id='color' type='color' value='#1976d2' style='width:48px;height:32px;padding:0;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;vertical-align:middle;'>
+          <label for='showLogo' style='margin-top:12px;display:block;'><strong>Show Logo</strong></label>
+          <input id='showLogo' type='checkbox' style='margin-left:12px;'>
+          <label for='animation' style='margin-top:12px;display:block;'><strong>Animation Style</strong></label>
+          <select id='animation' style='width:100%;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;'>
+            <option>Slide In</option>
+            <option>Fade In</option>
+            <option>Pop</option>
+          </select>
+          <label for='duration' style='margin-top:12px;display:block;'><strong>Duration (sec)</strong></label>
+          <input id='duration' type='number' min='1' max='60' value='8' style='width:80px;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;'>
+          <div style='text-align:right;margin-top:16px;'>
+            <button style='background:#1976d2;color:#fff;border:none;border-radius:8px;padding:8px 22px;font-weight:600;font-size:1.08rem;box-shadow:0 1px 4px rgba(25,118,210,0.10);margin-top:12px;cursor:pointer;'>Apply</button>
+          </div>
+        `;
+        container.appendChild(propDiv);
+      } else if (selectedInput === 'Video') {
+        const propDiv = document.createElement('div');
+        propDiv.className = 'property-item';
+        propDiv.style.background = '#e3f2fd';
+        propDiv.innerHTML = `
+          <div style='font-weight:600;color:#1976d2;margin-bottom:8px;'>Video Properties</div>
+          <label for='videoType'><strong>Video Type</strong></label><br>
+          <select id='videoType' style='width:100%;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;'>
+            <option>File</option>
+            <option>NDI</option>
+            <option>Camera</option>
+          </select>
+          <label for='settings' style='margin-top:12px;display:block;'><strong>Settings</strong></label>
+          <input id='settings' type='text' placeholder='Resolution, FPS, etc...' style='width:100%;padding:8px 12px;border-radius:6px;border:1.5px solid #b1c7e7;margin-top:6px;'>
+          <div style='text-align:right;margin-top:16px;'>
+            <button style='background:#1976d2;color:#fff;border:none;border-radius:8px;padding:8px 22px;font-weight:600;font-size:1.08rem;box-shadow:0 1px 4px rgba(25,118,210,0.10);margin-top:12px;cursor:pointer;'>Apply</button>
+          </div>
+        `;
+        container.appendChild(propDiv);
+      }
+    }
+
+    // Initial render
+    window.onload = function() {
+      showTransitionDuration();
+      renderScenePreview();
+      renderSourceProperties();
+    };
+  </script>
+</body>
+</html>

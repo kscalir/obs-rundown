@@ -1,10 +1,44 @@
 import React, { useState, useEffect, useRef } from "react";
 import ShowsPanel from "./components/ShowsPanel";
 import MainPanel from "./components/MainPanel";
+import RightPanel from "./components/RightPanel";
 import { API_BASE_URL } from "./config";
 
 
 function App() {
+  // Right panel width state and drag logic
+  const [rightPanelWidth, setRightPanelWidth] = useState(360);
+  const dragging = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(360);
+
+  // Mouse event handlers for drag
+  useEffect(() => {
+    function onMouseMove(e) {
+      if (!dragging.current) return;
+      const dx = startX.current - e.clientX;
+      let newWidth = Math.max(180, startWidth.current + dx); // min width 180
+      setRightPanelWidth(newWidth);
+    }
+    function onMouseUp() {
+      dragging.current = false;
+      document.body.style.cursor = "";
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
+  function startDrag(e) {
+    dragging.current = true;
+    startX.current = e.clientX;
+    startWidth.current = rightPanelWidth;
+    document.body.style.cursor = "ew-resize";
+    e.preventDefault();
+  }
   // Initialize show as null
   const [show, setShow] = useState(null);
 
@@ -265,42 +299,69 @@ function App() {
       display: "flex", 
       height: "100vh", 
       width: "100vw", 
-      overflow: "hidden",
-      boxSizing: "border-box" 
+      overflowX: "auto",
+      overflowY: "hidden",
+      boxSizing: "border-box"
     }}>
       {/* Left panel: ShowsPanel */}
-      <div style={{ width: 250, minWidth: 250, maxWidth: 250, borderRight: "1px solid #ccc", padding: 10 }}>
+      <div style={{ width: 250, minWidth: 0, maxWidth: 250, borderRight: "1px solid #ccc", padding: 10 }}>
         <ShowsPanel show={show} setShow={setShow} />
       </div>
       {/* Main content panel */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {show && (
-          <MainPanel
-            showId={show.id}
-            segments={segments}
-            loading={loading}
-            mediaError={mediaError}
-            editingType={editingType}
-            editingId={editingId}
-            editingValue={editingValue}
-            inputRef={inputRef}
-            toggleSegment={toggleSegment}
-            toggleGroup={toggleGroup}
-            addSegment={addSegment}
-            addGroup={addGroup}
-            addItem={addItem}
-            deleteSegment={deleteSegment}
-            deleteGroup={deleteGroup}
-            deleteItem={deleteItem}
-            handleEditStart={handleEditStart}
-            handleEditChange={handleEditChange}
-            handleEditCancel={handleEditCancel}
-            handleEditSave={handleEditSave}
-          />
-        )}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", height: "100vh" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {show && (
+            <MainPanel
+              showId={show.id}
+              segments={segments}
+              loading={loading}
+              mediaError={mediaError}
+              editingType={editingType}
+              editingId={editingId}
+              editingValue={editingValue}
+              inputRef={inputRef}
+              toggleSegment={toggleSegment}
+              toggleGroup={toggleGroup}
+              addSegment={addSegment}
+              addGroup={addGroup}
+              addItem={addItem}
+              deleteSegment={deleteSegment}
+              deleteGroup={deleteGroup}
+              deleteItem={deleteItem}
+              handleEditStart={handleEditStart}
+              handleEditChange={handleEditChange}
+              handleEditCancel={handleEditCancel}
+              handleEditSave={handleEditSave}
+            />
+          )}
+        </div>
+        {/* Draggable divider */}
+        <div
+          style={{
+            width: 8,
+            cursor: "ew-resize",
+            background: "#e1e6ec",
+            zIndex: 10,
+            userSelect: "none"
+          }}
+          onMouseDown={startDrag}
+        />
+        {/* Right panel, resizable */}
+       <div
+  style={{
+    width: rightPanelWidth,
+    minWidth: 0,
+    height: "100vh",
+    overflow: "hidden",
+    boxSizing: "border-box"
+  }}
+>
+  <RightPanel 
+    rightPanelWidth={rightPanelWidth}
+    setRightPanelWidth={setRightPanelWidth}
+  />
+</div>
       </div>
-      {/* Spacer */}
-      <div style={{ width: 28, minWidth: 28, maxWidth: 28, background: "transparent" }} />
     </div>
   );
 }

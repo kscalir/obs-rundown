@@ -1,63 +1,126 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Droppable, Draggable } from "@hello-pangea/dnd";
+import { API_BASE_URL } from "../config.js";
 
 export default function ModulesPanel({ onModuleSelected }) {
-  const modules = [
-    { 
-      label: "OBS Command", 
-      icon: "🎬", 
-      id: "obscommand",
-      type: "obscommand"
-    },
-    { 
-      label: "Graphics Template", 
-      icon: "🖼️", 
-      id: "graphicstemplate",
-      type: "graphicstemplate"
-    },
-    { 
-      label: "Presenter Note", 
-      icon: "📝", 
-      id: "presenternote",
-      type: "presenternote"
-    },
-    { 
-      label: "Video Placeholder", 
-      icon: "🎥", 
-      id: "video",
-      type: "video"
-    },
-    { 
-      label: "Audio Placeholder", 
-      icon: "🔊", 
-      id: "audio",
-      type: "audio"
+  const [scenes, setScenes] = useState([]);
+  const [currentScene, setCurrentScene] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch OBS scenes on component mount
+  useEffect(() => {
+    fetchOBSScenes();
+  }, []);
+
+  async function fetchOBSScenes() {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(`${API_BASE_URL}/api/obs/scenes`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch scenes: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setScenes(data.scenes || []);
+      setCurrentScene(data.currentProgramSceneName);
+    } catch (err) {
+      console.error('Error fetching OBS scenes:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-  ];
+  }
+
+  if (loading) {
+    return (
+      <div style={{
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#666",
+        fontSize: "14px"
+      }}>
+        Loading OBS scenes...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "20px"
+      }}>
+        <div style={{ color: "#d32f2f", fontSize: "14px", textAlign: "center", marginBottom: "10px" }}>
+          Error connecting to OBS: {error}
+        </div>
+        <button 
+          onClick={fetchOBSScenes}
+          style={{
+            padding: "6px 12px",
+            fontSize: "12px",
+            backgroundColor: "#1976d2",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer"
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ 
-      height: "100%", 
-      display: "flex", 
+    <div style={{
+      height: "100%",
+      display: "flex",
       flexDirection: "column",
-      overflow: "hidden"
+      overflow: "visible"
     }}>
       {/* Header */}
       <div style={{
-        padding: "10px",
-        borderBottom: "1px solid #ddd",
-        backgroundColor: "#f5f5f5",
-        fontWeight: 600,
-        fontSize: "14px",
-        flexShrink: 0
+        padding: "8px 12px",
+        borderBottom: "1px solid #eee",
+        backgroundColor: "#f8f9fa",
+        fontSize: "12px",
+        fontWeight: "bold",
+        color: "#666",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
       }}>
-        Modules Toolbox
+        <span>OBS Scenes</span>
+        <button 
+          onClick={fetchOBSScenes}
+          style={{
+            padding: "2px 6px",
+            fontSize: "10px",
+            backgroundColor: "transparent",
+            color: "#666",
+            border: "1px solid #ddd",
+            borderRadius: "3px",
+            cursor: "pointer"
+          }}
+          title="Refresh scenes"
+        >
+          ↻
+        </button>
       </div>
-      
-      {/* Draggable Modules */}
-      <div style={{ 
+
+      {/* Draggable Scenes */}
+      <div style={{
         flex: 1,
-        overflow: "auto",
+        overflow: "visible",
         padding: "5px"
       }}>
         <Droppable droppableId="toolbox" type="item" isDropDisabled={true}>
@@ -69,10 +132,10 @@ export default function ModulesPanel({ onModuleSelected }) {
                 minHeight: "100%"
               }}
             >
-              {modules.map((module, index) => (
+              {scenes.map((scene, index) => (
                 <Draggable
-                  key={module.id}
-                  draggableId={`toolbox-${module.type}`}
+                  key={scene.sceneUuid || scene.sceneName}
+                  draggableId={`toolbox-obsscene-${scene.sceneName}`}
                   index={index}
                 >
                   {(dragProvided, dragSnapshot) => (
@@ -84,29 +147,57 @@ export default function ModulesPanel({ onModuleSelected }) {
                         ...dragProvided.draggableProps.style,
                         margin: "5px 0",
                         padding: "8px 12px",
-                        backgroundColor: dragSnapshot.isDragging ? "#e3f2fd" : "#fff",
-                        border: "1px solid #ddd",
+                        backgroundColor: dragSnapshot.isDragging ? "#e3f2fd" : 
+                          scene.sceneName === currentScene ? "#fff3e0" : "#fff",
+                        border: scene.sceneName === currentScene ? 
+                          "2px solid #ff9800" : "1px solid #ddd",
                         borderRadius: "4px",
                         cursor: "grab",
                         display: "flex",
                         alignItems: "center",
                         gap: "8px",
                         fontSize: "14px",
-                        boxShadow: dragSnapshot.isDragging 
-                          ? "0 4px 8px rgba(0,0,0,0.2)" 
+                        boxShadow: dragSnapshot.isDragging
+                          ? "0 4px 8px rgba(0,0,0,0.2)"
                           : "0 1px 3px rgba(0,0,0,0.1)",
-                        transform: dragSnapshot.isDragging 
-                          ? dragProvided.draggableProps.style?.transform 
+                        transform: dragSnapshot.isDragging
+                          ? dragProvided.draggableProps.style?.transform
                           : "none"
                       }}
                     >
-                      <span style={{ fontSize: "16px" }}>{module.icon}</span>
-                      <span>{module.label}</span>
+                      <span style={{ fontSize: "16px" }}>
+                        {scene.sceneName === currentScene ? "🎬" : "📺"}
+                      </span>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                        <span>{scene.sceneName}</span>
+                        {scene.sceneName === currentScene && (
+                          <span style={{ 
+                            fontSize: "10px", 
+                            color: "#ff9800",
+                            fontWeight: "bold"
+                          }}>
+                            LIVE
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )}
                 </Draggable>
               ))}
               {provided.placeholder}
+              
+              {scenes.length === 0 && (
+                <div style={{
+                  margin: "15px 5px 5px 5px",
+                  padding: "8px",
+                  fontSize: "12px",
+                  color: "#999",
+                  fontStyle: "italic",
+                  textAlign: "center"
+                }}>
+                  No scenes found in OBS
+                </div>
+              )}
               
               {/* Instructions */}
               <div style={{
@@ -119,7 +210,7 @@ export default function ModulesPanel({ onModuleSelected }) {
                 borderTop: "1px solid #eee",
                 paddingTop: "10px"
               }}>
-                Drag modules to cues in the rundown
+                Drag scenes to cues in the rundown
               </div>
             </div>
           )}

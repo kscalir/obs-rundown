@@ -6,9 +6,7 @@ export default function RightPanel(props) {
   return (
     <div
       style={{
-        width: "100%",
         minWidth: 0,
-        maxWidth: "100%",
         background: "#f8fafd",
         borderLeft: "1.5px solid #e1e6ec",
         height: "100vh",

@@ -66,15 +66,18 @@ const STYLES = {
   },
   goButton: {
     background: "#1976d2",
-    color: "#fff",
     border: "none",
+    color: "#fff",
+    padding: "7px 22px",
     borderRadius: "999px",
-    padding: "8px 22px",
-    fontWeight: 600,
-    fontSize: "1.08rem",
     cursor: "pointer",
-    boxShadow: "0 1px 4px rgba(25, 118, 210, 0.10)",
-    marginLeft: "auto"
+    fontWeight: 600,
+    fontSize: "1em",
+    boxShadow: "0 1px 4px rgba(25,118,210,0.10)",
+    marginLeft: "auto",
+    letterSpacing: "0.02em",
+    outline: "none",
+    transition: "background 0.2s, box-shadow 0.2s, filter 0.2s, opacity 0.2s"
   },
   gearIcon: {
     marginLeft: "10px",
@@ -89,15 +92,16 @@ const STYLES = {
     marginTop: "18px"
   },
   button: {
-    background: "#1976d2",
-    color: "#fff",
-    border: "none",
-    borderRadius: "8px",
-    padding: "12px 28px",
-    fontWeight: 600,
-    fontSize: "1.08rem",
+    background: "#e3f2fd",
+    color: "#1976d2",
+    border: "1.5px solid #b1c7e7",
+    borderRadius: "12px",
+    fontWeight: 500,
+    fontSize: "15px",
+    padding: "10px 26px",
     cursor: "pointer",
-    boxShadow: "0 2px 8px rgba(25, 118, 210, 0.07)"
+    boxShadow: "0 1px 4px rgba(25,118,210,0.10)",
+    transition: "background 0.2s, color 0.2s, box-shadow 0.2s, border 0.2s, opacity 0.2s"
   },
   modalOverlay: {
     position: "fixed",
@@ -145,6 +149,8 @@ const STYLES = {
 };
 
 export default function ShowsHome({ onShowSelected }) {
+  // --- Button hover state for all buttons ---
+  const [hoveredBtn, setHoveredBtn] = useState(null);
   const [shows, setShows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -220,9 +226,22 @@ export default function ShowsHome({ onShowSelected }) {
                   {show.name}
                 </span>
                 <button
-                  style={STYLES.goButton}
+                  style={{
+                    ...STYLES.button,
+                    background: hoveredBtn === `go-${show.id}` ? "#1976d2" : STYLES.button.background,
+                    color: hoveredBtn === `go-${show.id}` ? "#fff" : STYLES.button.color,
+                    opacity: loading ? 0.5 : 1,
+                    cursor: loading ? "not-allowed" : "pointer",
+                    borderRadius: "999px",
+                    fontWeight: 600,
+                    fontSize: "1em",
+                    marginLeft: "auto"
+                  }}
+                  onMouseEnter={() => setHoveredBtn(`go-${show.id}`)}
+                  onMouseLeave={() => setHoveredBtn(null)}
                   onClick={() => onShowSelected(show)}
                   title="Open show"
+                  disabled={loading}
                 >
                   Go
                 </button>
@@ -294,7 +313,11 @@ export default function ShowsHome({ onShowSelected }) {
                     Cancel
                   </button>
                   <button
-                    style={{ ...STYLES.button, background: "#d32f2f" }}
+                    style={{
+                      ...STYLES.button,
+                      background: "#d32f2f",
+                      color: "#fff"
+                    }}
                     onClick={() => setDeleteConfirm(true)}
                     disabled={settingsLoading}
                   >
@@ -321,7 +344,7 @@ export default function ShowsHome({ onShowSelected }) {
                 />
                 <div style={STYLES.modalActions}>
                   <button
-                    style={{ ...STYLES.button, background: "#d32f2f" }}
+                    style={{ ...STYLES.button, background: "#d32f2f", color: "#fff" }}
                     onClick={async () => {
                       if (deleteConfirm !== "DELETE") return;
                       setSettingsLoading(true);
@@ -364,7 +387,15 @@ export default function ShowsHome({ onShowSelected }) {
         )}
         <div style={STYLES.addShow}>
           <button
-            style={STYLES.button}
+            style={{
+              ...STYLES.button,
+              background: hoveredBtn === "add-show" ? "#1976d2" : STYLES.button.background,
+              color: hoveredBtn === "add-show" ? "#fff" : STYLES.button.color,
+              opacity: loading ? 0.5 : 1,
+              cursor: loading ? "not-allowed" : "pointer"
+            }}
+            onMouseEnter={() => setHoveredBtn("add-show")}
+            onMouseLeave={() => setHoveredBtn(null)}
             onClick={() => setModalOpen(true)}
             disabled={loading}
           >

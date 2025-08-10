@@ -1,0 +1,10 @@
+/* Global app style to match Rundown tab */
+html, body, #root {
+  background: #fafdff !important;
+  color: #222;
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
