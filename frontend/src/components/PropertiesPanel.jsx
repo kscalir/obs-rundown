@@ -1,61 +1,41 @@
 import React, { useState, useEffect } from "react";
-import GraphicsTemplateEditor from './properties/GraphicsTemplateEditor';
-import ObsCommandEditor from './properties/ObsCommandEditor';
-import PresenterNoteEditor from './properties/PresenterNoteEditor';
-import VideoEditor from './properties/VideoEditor';
-import AudioEditor from './properties/AudioEditor';
+import { API_BASE_URL } from "../config";
+import ObsSceneEditor from "./properties/ObsSceneEditor";
 
 export default function PropertiesPanel({
-  showId,
-  selectedEpisode,
   segments,
-  loading,
-  mediaError,
-  editingType,
-  editingId,
-  editingValue,
-  inputRef,
-  toggleSegment,
-  toggleGroup,
-  addSegment,
-  addGroup,
-  setEditingType,
-  setEditingId,
-  setEditingValue,
-  setRefreshKey,
-  selectedTab,
-  setSelectedTab,
-  show,
   itemId,
-  itemData,
-  onClose
 }) {
   const [selectedItem, setSelectedItem] = useState(null);
 
-  // Find selected item from segments
+  // Find selected item from segments by id
   useEffect(() => {
-    if (!itemId) {
+    if (itemId == null) {
       setSelectedItem(null);
       return;
     }
-
-    if (segments) {
-      let found = null;
-      segments.forEach((segment) => {
-        if (found) return;
-        (segment.groups || []).forEach((group) => {
-          if (found) return;
-          const groupItem = (group.items || []).find((i) => i.id === itemId);
-          if (groupItem) found = groupItem;
-        });
-      });
-      
-      setSelectedItem(found);
+    if (!segments || segments.length === 0) {
+      setSelectedItem(null);
+      return;
     }
+    let found = null;
+    for (const segment of segments) {
+      if (found) break;
+      for (const group of (segment.groups || [])) {
+        if (found) break;
+        const match = (group.items || []).find(i => String(i.id) === String(itemId));
+        if (match) {
+          found = match;
+          break;
+        }
+      }
+    }
+    console.debug("PropertiesPanel: resolve selectedItem", { itemId, found, segmentsCount: (segments||[]).length });
+    setSelectedItem(found || null);
   }, [itemId, segments]);
 
-  // No item selected
-  if (!itemId || !itemData || !selectedItem) {
+  // Empty state
+  if (itemId == null || !selectedItem) {
     return (
       <div style={{
         width: "100%",
@@ -78,68 +58,58 @@ export default function PropertiesPanel({
     );
   }
 
-  // Main render
+  // Be tolerant of historical types:
+  // - "obs_scene" (new)
+  // - "obsscene" (early UI)
+  // - "obscommand" with SetCurrentProgramScene (toolbox drop)
+  const rawType = selectedItem?.type ?? selectedItem?.data?.type ?? selectedItem?.item_type;
+  const t = String(rawType || "").toLowerCase();
+const cmd = selectedItem?.command || selectedItem?.data?.command;
+const hasSceneData =
+  !!(selectedItem?.data?.scene ||
+     selectedItem?.data?.parameters?.sceneName ||
+     selectedItem?.scene);
+
+const isObsScene =
+  t === "obs_scene" ||
+  t === "obscommand" ||
+  (t === "obscommand" && (cmd === "SetCurrentProgramScene" || hasSceneData)) ||
+  cmd === "SetCurrentProgramScene" ||
+  hasSceneData;
+
   return (
-    <div style={{
-      flex: 1,
-      overflow: "auto",
-      background: "#f8fafd",
-      height: "100%",
-    }}>
-      <div style={{
-        padding: "15px",
-        borderBottom: "1px solid #e1e6ec",
-      }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>
-          Properties
-        </h2>
+    <div style={{ flex: 1, overflow: "auto", background: "#f8fafd", height: "100%" }}>
+      <div style={{ padding: "15px", borderBottom: "1px solid #e1e6ec" }}>
+        <h2 style={{ margin: 0, fontSize: 18 }}>Properties</h2>
       </div>
 
-      <div style={{
-        height: "calc(100% - 50px)",
-        overflow: "auto",
-      }}>
-        {(selectedItem.type === "toolbox-graphicstemplate" || selectedItem.type === "graphicstemplate") && (
-          <GraphicsTemplateEditor 
-            selectedItem={selectedItem}
-            itemData={itemData}
-            setRefreshKey={setRefreshKey}
+      <div style={{ height: "calc(100% - 50px)", overflow: "auto", padding: 12 }}>
+        {isObsScene ? (
+          <ObsSceneEditor
+            key={`obs-${String(selectedItem.id)}`}
+            item={selectedItem}
+            itemId={selectedItem.id}
+            itemData={selectedItem?.data}
+            onPatch={async (partial) => {
+              const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(partial),
+              });
+              if (!res.ok) {
+                const t = await res.text().catch(() => "");
+                throw new Error(t || `Failed to save item ${selectedItem.id}`);
+              }
+            }}
           />
+        ) : (
+          <div style={{ padding: 12, color: "#666" }}>
+            This item type isn’t supported in the new properties panel yet.
+            <div style={{ marginTop: 6, fontSize: 12, color: "#999" }}>
+              Item type: <code>{String(rawType || "(unknown)")}</code>
+            </div>
+          </div>
         )}
-        
-        {(selectedItem.type === "toolbox-obscommand" || selectedItem.type === "obscommand") && (
-          <ObsCommandEditor 
-            selectedItem={selectedItem}
-            itemData={itemData}
-            setRefreshKey={setRefreshKey}
-          />
-        )}
-        
-        {(selectedItem.type === "toolbox-presenternote" || selectedItem.type === "presenternote") && (
-          <PresenterNoteEditor 
-            selectedItem={selectedItem}
-            itemData={itemData}
-            setRefreshKey={setRefreshKey}
-          />
-        )}
-
-        {(selectedItem.type === "toolbox-video" || selectedItem.type === "video") && (
-          <VideoEditor 
-            selectedItem={selectedItem}
-            itemData={itemData}
-            setRefreshKey={setRefreshKey}
-          />
-        )}
-
-        {(selectedItem.type === "toolbox-audio" || selectedItem.type === "audio") && (
-          <AudioEditor 
-            selectedItem={selectedItem}
-            itemData={itemData}
-            setRefreshKey={setRefreshKey}
-          />
-        )}
-
-        {/* Add future editors here: VideoEditor, AudioEditor, etc. */}
       </div>
     </div>
   );

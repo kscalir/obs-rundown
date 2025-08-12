@@ -17,6 +17,28 @@ router.get('/', (req, res) => {
   );
 });
 
+// Get single item by id
+router.get('/:id', (req, res) => {
+  const { id } = req.params;
+  db.get('SELECT * FROM rundown_items WHERE id = ?', [id], (err, row) => {
+    if (err) {
+      console.error('DB get item error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    if (!row) return res.status(404).json({ error: 'Item not found' });
+
+    if (row.data) {
+      try {
+        row.data = JSON.parse(row.data);
+      } catch (e) {
+        row.data = {};
+      }
+    }
+
+    res.json(row);
+  });
+});
+
 // Update item
 router.patch('/:id', (req, res) => {
   const { id } = req.params;
@@ -154,7 +176,6 @@ router.post('/', (req, res) => {
   });
 });
 
-module.exports = router;
 // Delete item by ID
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
@@ -169,3 +190,5 @@ router.delete('/:id', (req, res) => {
     res.json({ success: true, id });
   });
 });
+
+module.exports = router;

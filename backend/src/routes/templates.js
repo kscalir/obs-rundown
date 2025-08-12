@@ -63,4 +63,16 @@ router.get('/:id/preview', async (req, res) => {
   }
 });
 
+// Get placeholders for a specific template
+router.get('/:id/placeholders', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const placeholders = templateRegistry.getPlaceholders(id);
+    return res.json(placeholders);
+  } catch (err) {
+    console.error('Error getting placeholders:', err);
+    res.status(500).json({ error: 'Failed to load placeholders' });
+  }
+});
+
 module.exports = router;

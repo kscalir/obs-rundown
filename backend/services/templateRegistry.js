@@ -14,9 +14,9 @@ class TemplateRegistry {
     try {
       const xmlContent = fs.readFileSync(xmlPath, 'utf8');
       const parser = new xml2js.Parser();
-      const result = await parser.parseStringPromise(xmlContent);
+      const parsedXml = await parser.parseStringPromise(xmlContent);
       
-      const template = result.template;
+      const template = parsedXml.template;
       const parameters = [];
       
       if (template.parameters && template.parameters[0] && template.parameters[0].parameter) {
@@ -35,9 +35,11 @@ class TemplateRegistry {
         description: template.description[0],
         author: template.author ? template.author[0] : 'Unknown',
         version: template.version ? template.version[0] : '1.0',
-        html: template.html ? template.html[0] : 'index.html',
+        htmlFile: template.html ? template.html[0] : 'index.html',
         thumbnail: template.thumbnail ? template.thumbnail[0] : null,
-        parameters
+        parameters,
+        xmlPath: path.resolve(xmlPath),
+        parsedXml
       };
     } catch (err) {
       console.error('Error parsing XML:', err);
@@ -48,6 +50,9 @@ class TemplateRegistry {
   // Initialize registry by scanning templates directory
   async initialize() {
     console.log(`Scanning templates directory: ${this.templatesDir}`);
+    
+    // Clear existing templates before scanning
+    this.templates = {};
     
     // Create templates directory if it doesn't exist
     if (!fs.existsSync(this.templatesDir)) {
@@ -73,7 +78,7 @@ class TemplateRegistry {
               this.templates[item.name] = {
                 id: item.name,
                 ...templateData,
-                path: templateDir
+                path: path.resolve(templateDir)
               };
               console.log(`Loaded template: ${templateData.name}`);
             }
@@ -217,15 +222,32 @@ class TemplateRegistry {
     console.log('Created index.html');
   }
   
-  // Get all templates
+  // Get all templates (normalized)
   getAllTemplates() {
     console.log(`Returning ${Object.keys(this.templates).length} templates`);
-    return Object.values(this.templates);
+    return Object.values(this.templates).map(t => ({
+      id: t.id,
+      name: t.name,
+      htmlFile: t.htmlFile,
+      thumbnail: t.thumbnail
+    }));
   }
   
-  // Get a specific template by ID
-  getTemplate(id) {
+  // Get full template details (internal use)
+  getTemplateFull(id) {
     return this.templates[id] || null;
+  }
+  
+  // Get a specific template by ID (normalized)
+  getTemplate(id) {
+    const t = this.templates[id];
+    if (!t) return null;
+    return {
+      id: t.id,
+      name: t.name,
+      htmlFile: t.htmlFile,
+      thumbnail: t.thumbnail
+    };
   }
   
   // Get path to template HTML file
@@ -236,7 +258,7 @@ class TemplateRegistry {
       return null;
     }
     
-    const htmlPath = path.join(template.path, template.html);
+    const htmlPath = path.join(template.path, template.htmlFile);
     console.log(`Template path for ${id}: ${htmlPath}`);
     
     // Check if file exists
@@ -246,6 +268,36 @@ class TemplateRegistry {
     }
     
     return htmlPath;
+  }
+
+  // Normalize Caspar-style parameter type to simple UI type
+  normalizeParamType(type) {
+    if (!type) return 'text';
+    const t = String(type).toUpperCase();
+    if (t.includes('COLOR')) return 'color';
+    if (t.includes('STRING') || t.includes('TEXT')) return 'text';
+    if (t.includes('NUMBER') || t.includes('INT') || t.includes('FLOAT')) return 'number';
+    if (t.includes('BOOL')) return 'checkbox';
+    return 'text';
+  }
+
+  // Return normalized placeholders for a template (for editor UI)
+  getPlaceholders(templateId) {
+    const tpl = this.templates[templateId];
+    if (!tpl || !tpl.parameters) return [];
+
+    return tpl.parameters.map((p) => ({
+      id: p.id,
+      label: p.info || p.id,
+      type: this.normalizeParamType(p.type),
+      defaultValue: p.default ?? '',
+    }));
+  }
+  
+  // Rescan templates and return normalized list
+  async rescan() {
+    await this.initialize();
+    return this.getAllTemplates();
   }
   
   // Add GDD XML parsing

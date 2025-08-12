@@ -14,13 +14,21 @@ const groupsRouter = require('./src/routes/groups');
 const itemsRouter = require('./src/routes/items');
 const templateRegistry = require('./services/templateRegistry');
 const graphicsRouter = require('./src/routes/graphics');
+const obsRoutes = require('./src/routes/obsRoutes');
 
 // Create Express app
 const app = express();
 const server = http.createServer(app);
 
 // Middleware
-app.use(cors());
+
+app.use(cors({
+  origin: '*', // or your frontend origin
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
+}));
+
+app.options('*', cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -34,7 +42,7 @@ app.use('/api/items', itemsRouter);
 app.use('/api', rundownRouter);
 app.use('/api/graphics', graphicsRouter);
 app.use('/api/media', require('./src/routes/media'));
-app.use('/api/obs', require('./src/routes/obs'));
+app.use('/api/obs', require('./src/routes/obsRoutes'));
 
 // Serve static files for uploads
 app.use('/media', express.static(path.join(__dirname, 'media')));
