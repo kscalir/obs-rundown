@@ -1,29 +1,28 @@
 const express = require('express');
 const router = express.Router();
-const { getDb, handleError } = require('../utils/db');
+const db = require('../../services/database');
 
 // GET all shows
 router.get('/', (req, res) => {
-  const db = getDb();
-  db.all('SELECT * FROM shows ORDER BY id', [], (err, rows) => {
-    db.close();
-    if (err) return handleError(res, err, 'query');
+  try {
+    const rows = db.executeQuery('SELECT * FROM shows ORDER BY id');
     res.json(rows);
-  });
+  } catch (err) {
+    return db.handleError(res, err, 'query shows');
+  }
 });
 
 // GET episodes for a show
 router.get('/:id/episodes', (req, res) => {
-  const db = getDb();
-  db.all(
-    'SELECT * FROM episodes WHERE show_id = ? ORDER BY id DESC',
-    [req.params.id],
-    (err, rows) => {
-      db.close();
-      if (err) return handleError(res, err, 'query');
-      res.json(rows);
-    }
-  );
+  try {
+    const rows = db.executeQuery(
+      'SELECT * FROM episodes WHERE show_id = ? ORDER BY id DESC',
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    return db.handleError(res, err, 'query episodes');
+  }
 });
 
 // POST new show
@@ -31,59 +30,71 @@ router.post('/', express.json(), (req, res) => {
   const { name } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Show name required' });
 
-  const db = getDb();
-  db.run('INSERT INTO shows (name) VALUES (?)', [name.trim()], function(err) {
-    db.close();
-    if (err) return handleError(res, err, 'insert');
-    res.json({ id: this.lastID, name: name.trim() });
-  });
+  try {
+    const result = db.executeRun('INSERT INTO shows (name) VALUES (?)', [name.trim()]);
+    res.json({ id: result.lastInsertRowid, name: name.trim() });
+  } catch (err) {
+    return db.handleError(res, err, 'create show');
+  }
 });
 
 // PATCH rename show
 router.patch('/:id', express.json(), (req, res) => {
   const { name } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Show name required' });
-  const db = getDb();
-  db.run('UPDATE shows SET name = ? WHERE id = ?', [name.trim(), req.params.id], function(err) {
-    db.close();
-    if (err) return handleError(res, err, 'update');
+  
+  try {
+    db.executeRun('UPDATE shows SET name = ? WHERE id = ?', [name.trim(), req.params.id]);
     res.json({ id: parseInt(req.params.id), name: name.trim() });
-  });
+  } catch (err) {
+    return db.handleError(res, err, 'update show');
+  }
 });
 
 // DELETE show (and cascade delete episodes, segments, groups, items, media)
 router.delete('/:id', (req, res) => {
-  const db = getDb();
   const showId = req.params.id;
-  db.serialize(() => {
-    // Delete all items in groups in segments in episodes for this show
-    db.run(`DELETE FROM rundown_items WHERE group_id IN (
-      SELECT id FROM rundown_groups WHERE segment_id IN (
+  
+  try {
+    const database = db.getDb();
+    
+    // Use transaction for cascading deletes
+    const deleteTransaction = database.transaction(() => {
+      // Delete all items in groups in segments in episodes for this show
+      database.prepare(`DELETE FROM rundown_items WHERE group_id IN (
+        SELECT id FROM rundown_groups WHERE segment_id IN (
+          SELECT id FROM rundown_segments WHERE episode_id IN (
+            SELECT id FROM episodes WHERE show_id = ?
+          )
+        )
+      )`).run(showId);
+      
+      // Delete all groups
+      database.prepare(`DELETE FROM rundown_groups WHERE segment_id IN (
         SELECT id FROM rundown_segments WHERE episode_id IN (
           SELECT id FROM episodes WHERE show_id = ?
         )
-      )
-    )`, [showId]);
-    // Delete all groups
-    db.run(`DELETE FROM rundown_groups WHERE segment_id IN (
-      SELECT id FROM rundown_segments WHERE episode_id IN (
+      )`).run(showId);
+      
+      // Delete all segments
+      database.prepare(`DELETE FROM rundown_segments WHERE episode_id IN (
         SELECT id FROM episodes WHERE show_id = ?
-      )
-    )`, [showId]);
-    // Delete all segments
-    db.run(`DELETE FROM rundown_segments WHERE episode_id IN (
-      SELECT id FROM episodes WHERE show_id = ?
-    )`, [showId]);
-    // Delete all episodes
-    db.run('DELETE FROM episodes WHERE show_id = ?', [showId]);
-    // Delete all media
-    db.run('DELETE FROM media WHERE show_id = ?', [showId]);
-    // Delete the show itself
-    db.run('DELETE FROM shows WHERE id = ?', [showId], function(err) {
-      db.close();
-      if (err) return handleError(res, err, 'delete');
-      res.json({ id: parseInt(showId), deleted: true });
+      )`).run(showId);
+      
+      // Delete all episodes
+      database.prepare('DELETE FROM episodes WHERE show_id = ?').run(showId);
+      
+      // Delete all media
+      database.prepare('DELETE FROM media WHERE show_id = ?').run(showId);
+      
+      // Delete the show itself
+      database.prepare('DELETE FROM shows WHERE id = ?').run(showId);
     });
-  });
+    
+    deleteTransaction();
+    res.json({ id: parseInt(showId), deleted: true });
+  } catch (err) {
+    return db.handleError(res, err, 'delete show');
+  }
 });
 module.exports = router;

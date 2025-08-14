@@ -75,4 +75,15 @@ router.get('/:id/placeholders', async (req, res) => {
   }
 });
 
+// Rescan templates directory
+router.post('/rescan', async (req, res) => {
+  try {
+    const templates = await templateRegistry.rescan();
+    res.json({ templates, refreshed: true });
+  } catch (err) {
+    console.error('Error rescanning templates:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

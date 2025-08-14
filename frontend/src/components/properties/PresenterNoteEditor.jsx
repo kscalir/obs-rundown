@@ -1,4 +1,5 @@
 import React from "react";
+import { API_BASE_URL } from '../../config';
 
 export default function PresenterNoteEditor({ selectedItem, itemData, setRefreshKey }) {
   // Handle title change

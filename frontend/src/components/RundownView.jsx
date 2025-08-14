@@ -597,6 +597,43 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
   }
 
 
+  // --- Apply a partial item patch into segmentsState (keeps UI in sync without refetch) ---
+  function mergeItemData(oldData, patchData) {
+    if (!Object.prototype.hasOwnProperty.call({ data: true }, 'data')) return oldData; // never hit; clarity
+    if (patchData && typeof patchData === 'object' && !Array.isArray(patchData)) {
+      return { ...(oldData || {}), ...patchData };
+    }
+    return patchData; // allow explicit replace with non-object/null
+  }
+
+  function applyItemPatchToSegments(prevSegments, itemId, patch) {
+    const idStr = String(itemId);
+    let changed = false;
+    const next = (prevSegments || []).map(seg => {
+      let segChanged = false;
+      const nextGroups = (seg.groups || []).map(g => {
+        let gChanged = false;
+        const nextItems = (g.items || []).map(it => {
+          if (String(it.id) !== idStr) return it;
+          // merge top-level fields and deep-merge data
+          const merged = { ...it, ...patch };
+          if (Object.prototype.hasOwnProperty.call(patch || {}, 'data')) {
+            merged.data = mergeItemData(it.data, patch.data);
+          }
+          gChanged = true;
+          return merged;
+        });
+        if (!gChanged) return g;
+        segChanged = true;
+        return { ...g, items: nextItems };
+      });
+      if (!segChanged) return seg;
+      changed = true;
+      return { ...seg, groups: nextGroups };
+    });
+    return changed ? next : prevSegments;
+  }
+
   // Selected item
   const [selectedItem, setSelectedItem] = useState(null);
 
@@ -692,6 +729,18 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
     for (const seg of segmentsState) for (const g of seg.groups || []) for (const it of g.items || []) if (it.id === selectedItem) return it;
     return null;
   };
+
+  // Listen for item patches from PropertiesPanel and mirror into segmentsState
+  useEffect(() => {
+    function onPatched(e) {
+      const detail = e && e.detail ? e.detail : {};
+      const { itemId, patch } = detail;
+      if (!itemId || !patch) return;
+      setSegmentsState(prev => applyItemPatchToSegments(prev, itemId, patch));
+    }
+    window.addEventListener('rundown:item-patched', onPatched);
+    return () => window.removeEventListener('rundown:item-patched', onPatched);
+  }, []);
 
   return (
     <DragDropContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>

@@ -9,6 +9,7 @@ const obsService = require('../../services/obs');
  * - GET  /api/obs/sources/:sceneName          -> list sources in a scene (path)
  * - GET  /api/obs/placeholders?scene=NAME     -> list placeholder boxes in scene
  * - GET  /api/obs/screenshot?scene=NAME       -> base64 PNG screenshot of scene
+ * - POST /api/obs/add-source-to-scene         -> add existing source to a scene (body: { sceneName, sourceName, index?, visible? })
  * - POST /api/obs/replace-placeholders        -> replace placeholders (body: { sceneName, mappings })
  * - POST /api/obs/overlay/ensure              -> attach/detach overlay into a scene (body: { sceneName, attach })
  */
@@ -17,7 +18,13 @@ const obsService = require('../../services/obs');
 router.get('/scenes', async (req, res) => {
   try {
     const { scenes, currentProgramSceneName } = await obsService.getScenes();
-    res.json({ scenes, currentProgramSceneName });
+    // Hide utility scenes from UI module lists
+    const hiddenScenes = new Set(['GFX-SOURCES', 'VIDEO-PLAYBACK']);
+    const filteredScenes = Array.isArray(scenes)
+      ? scenes.filter((name) => !hiddenScenes.has(name))
+      : [];
+    res.json({ scenes: filteredScenes, currentProgramSceneName });
+    return;
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -97,8 +104,6 @@ router.post('/replace-placeholders', async (req, res) => {
   }
 });
 
-// (removed /api/obs/overlays/ensure route)
-
 // POST /api/obs/overlay/ensure  { sceneName: string, attach: boolean }
 router.post('/overlay/ensure', async (req, res) => {
   try {
@@ -114,36 +119,123 @@ router.post('/overlay/ensure', async (req, res) => {
   }
 });
 
+// POST /api/obs/video-playback/ensure
+// Ensures the VIDEO-PLAYBACK scene exists (and is positioned at the bottom) and that its 4 media player channels are created.
+// Body: {}
+router.post('/video-playback/ensure', async (req, res) => {
+  try {
+    const result = await obsService.ensureVideoPlaybackScene();
+    // Expected shape from service: { ok:true, sceneName:'VIDEO-PLAYBACK', created:boolean, positionedAtBottom:boolean, playersCreated:number }
+    return res.json(result);
+  } catch (err) {
+    console.error('video-playback/ensure failed:', err);
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+// POST /api/obs/add-source-to-scene
+// Body: { sceneName: string, sourceName: string, index?: number, visible?: boolean }
+// Adds an existing source into the specified scene. If index is provided, inserts at that position (top=0).
+router.post('/add-source-to-scene', async (req, res) => {
+  try {
+    const { sceneName, sourceName, index, visible } = req.body || {};
+    if (!sceneName || !sourceName) {
+      return res.status(400).json({ error: 'sceneName and sourceName are required' });
+    }
+
+    const opts = {};
+    if (typeof index === 'number') opts.index = index;
+    if (typeof visible === 'boolean') opts.visible = visible;
+
+    const result = await obsService.addExistingSourceToScene(sceneName, sourceName, opts);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('add-source-to-scene failed:', err);
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 // POST /api/obs/paste-placeholder-transform
-// Body: { sceneName: string, channel: number, placeholderIndex?: number, placeholderId?: string }
-// Copies the transform from the given placeholder (by index or id) to the CG-{channel} source in the same scene.
-// Requires: sceneName (string), channel (number), and either placeholderIndex (number) or placeholderId (string)
+// Body: { sceneName: string, targetSourceName?: string, channel?: number, placeholderIndex?: number, placeholderId?: string }
+// Copies the transform from the given placeholder (by index or id) to the target source in the same scene.
+// Provide either `targetSourceName` directly, or `channel` (which maps to `CG-{channel}`).
 router.post('/paste-placeholder-transform', async (req, res) => {
   try {
-    const { sceneName, placeholderIndex, placeholderId, channel } = req.body || {};
+    const { sceneName, placeholderIndex, placeholderId, channel, targetSourceName: explicitTarget } = req.body || {};
 
-    if (!sceneName || typeof channel !== 'number' || (typeof placeholderIndex !== 'number' && !placeholderId)) {
+    if (!sceneName) {
+      return res.status(400).json({ error: 'sceneName is required' });
+    }
+
+    const targetSourceName = explicitTarget || (typeof channel === 'number' ? `CG-${channel}` : null);
+    if (!targetSourceName) {
+      return res.status(400).json({ error: 'targetSourceName or channel required' });
+    }
+
+    if (typeof placeholderIndex !== 'number' && !placeholderId) {
       return res.status(400).json({
-        error: 'sceneName and channel are required, and at least one of placeholderIndex (number) or placeholderId (string) must be provided',
+        error: 'At least one of placeholderIndex (number) or placeholderId (string) must be provided',
       });
     }
 
-    // Our CG sources are named like CG-1, CG-2, etc.
-    const targetSourceName = `CG-${channel}`;
-
-    // Delegate to the service to do the OBS-side copy/paste of transform.
-    // The service should handle whether placeholderIndex or placeholderId is provided.
-    const result = await obsService.copyTransformFromPlaceholderToSource(
-      sceneName,
-      typeof placeholderIndex === 'number' ? placeholderIndex : undefined,
+    const result = await obsService.copyTransformFromPlaceholderToSource(sceneName, {
+      placeholderIndex: (typeof placeholderIndex === 'number' ? placeholderIndex : null),
+      placeholderId: placeholderId ?? null,
       targetSourceName,
-      placeholderId
-    );
+    });
 
     return res.json({ ok: true, ...result });
   } catch (err) {
     console.error('paste-placeholder-transform failed:', err);
     return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+// POST /api/obs/replace-with-placeholder-transform
+router.post('/replace-with-placeholder-transform', async (req, res) => {
+  try {
+    const {
+      sceneName,
+      placeholderId,
+      placeholderIndex,
+      targetSourceName,
+      channel,
+      removeSourceName,
+      removeChannel,
+      pushToTop
+    } = req.body || {};
+
+    if (!sceneName) return res.status(400).json({ error: 'sceneName required' });
+    if (!targetSourceName && typeof channel !== 'number') {
+      return res.status(400).json({ error: 'targetSourceName or channel required' });
+    }
+
+    const result = await obsService.replaceWithPlaceholderTransform(sceneName, {
+      placeholderId,
+      placeholderIndex,
+      targetSourceName,
+      channel,
+      removeSourceName,
+      removeChannel,
+      pushToTop
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/obs/remove-source-from-scene
+router.post('/remove-source-from-scene', async (req, res) => {
+  try {
+    const { sceneName, sourceName } = req.body || {};
+    if (!sceneName || !sourceName) {
+      return res.status(400).json({ error: 'sceneName and sourceName required' });
+    }
+    const result = await obsService.removeSourceFromScene(sceneName, sourceName);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

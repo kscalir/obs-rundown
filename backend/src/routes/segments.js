@@ -1,11 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-
-// Database connection
-const dbPath = path.join(__dirname, '../../database.sqlite');
-const db = new sqlite3.Database(dbPath);
+const db = require('../../services/database');
 
 // Get all segments
 router.get('/', (req, res) => {
@@ -21,14 +16,12 @@ router.get('/', (req, res) => {
     ORDER BY position
   `;
   
-  db.all(sql, (err, rows) => {
-    if (err) {
-      console.error('Error fetching segments:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
-    
+  try {
+    const rows = db.executeQuery(sql);
     res.json(rows);
-  });
+  } catch (err) {
+    return db.handleError(res, err, 'query segments');
+  }
 });
 
 // Update segment position
@@ -62,18 +55,15 @@ router.patch('/:id', (req, res) => {
   
   console.log('Executing SQL:', sql, 'with values:', values);
   
-  db.run(sql, values, function(err) {
-    if (err) {
-      console.error('DB update segment error:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
+  try {
+    const result = db.executeRun(sql, values);
     
-    if (this.changes === 0) {
+    if (result.changes === 0) {
       return res.status(404).json({ error: 'Segment not found' });
     }
     
     // Return the updated segment
-    db.get(`
+    const row = db.executeGet(`
       SELECT 
         id,
         episode_id,
@@ -83,16 +73,13 @@ router.patch('/:id', (req, res) => {
         updated_at
       FROM rundown_segments 
       WHERE id = ?
-    `, [id], (err, row) => {
-      if (err) {
-        console.error('Error fetching updated segment:', err);
-        return res.status(500).json({ error: 'Database error' });
-      }
-      
-      console.log('Updated segment result:', row);
-      res.json(row);
-    });
-  });
+    `, [id]);
+    
+    console.log('Updated segment result:', row);
+    res.json(row);
+  } catch (err) {
+    return db.handleError(res, err, 'update segment');
+  }
 });
 
 // Add this POST route:
@@ -112,37 +99,30 @@ router.post('/', (req, res) => {
   
   const segmentPosition = position !== undefined ? position : 0;
   
-  db.run(sql, [episode_id, name, segmentPosition], function(err) {
-    if (err) {
-      console.error('Error creating segment:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
+  try {
+    const result = db.executeRun(sql, [episode_id, name, segmentPosition]);
     
     // Fetch the created segment
-    db.get('SELECT * FROM rundown_segments WHERE id = ?', [this.lastID], (err, row) => {
-      if (err) {
-        console.error('Error fetching created segment:', err);
-        return res.status(500).json({ error: 'Database error' });
-      }
-      
-      console.log('Created segment:', row);
-      res.status(201).json(row);
-    });
-  });
+    const row = db.executeGet('SELECT * FROM rundown_segments WHERE id = ?', [result.lastInsertRowid]);
+    
+    console.log('Created segment:', row);
+    res.status(201).json(row);
+  } catch (err) {
+    return db.handleError(res, err, 'create segment');
+  }
 });
 
 module.exports = router;
 // Delete segment by ID
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
-  db.run('DELETE FROM rundown_segments WHERE id = ?', [id], function(err) {
-    if (err) {
-      console.error('Error deleting segment:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
-    if (this.changes === 0) {
+  try {
+    const result = db.executeRun('DELETE FROM rundown_segments WHERE id = ?', [id]);
+    if (result.changes === 0) {
       return res.status(404).json({ error: 'Segment not found' });
     }
     res.json({ success: true, id });
-  });
+  } catch (err) {
+    return db.handleError(res, err, 'delete segment');
+  }
 });

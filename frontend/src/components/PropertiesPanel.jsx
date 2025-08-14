@@ -77,6 +77,20 @@ const isObsScene =
   cmd === "SetCurrentProgramScene" ||
   hasSceneData;
 
+  // Merge a partial item patch into the currently selected item
+  function applyLocalPatch(prevItem, patch) {
+    if (!prevItem || !patch) return prevItem;
+    const next = { ...prevItem, ...patch };
+    if (Object.prototype.hasOwnProperty.call(patch, "data")) {
+      if (patch.data && typeof patch.data === "object" && !Array.isArray(patch.data)) {
+        next.data = { ...(prevItem?.data || {}), ...(patch.data || {}) };
+      } else {
+        next.data = patch.data; // allow explicit replacement
+      }
+    }
+    return next;
+  }
+
   return (
     <div style={{ flex: 1, overflow: "auto", background: "#f8fafd", height: "100%" }}>
       <div style={{ padding: "15px", borderBottom: "1px solid #e1e6ec" }}>
@@ -89,8 +103,8 @@ const isObsScene =
             key={`obs-${String(selectedItem.id)}`}
             item={selectedItem}
             itemId={selectedItem.id}
-            itemData={selectedItem?.data}
             onPatch={async (partial) => {
+              // 1) Persist to backend
               const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -99,6 +113,20 @@ const isObsScene =
               if (!res.ok) {
                 const t = await res.text().catch(() => "");
                 throw new Error(t || `Failed to save item ${selectedItem.id}`);
+              }
+
+              // 2) Optimistically merge into local PropertiesPanel state
+              setSelectedItem((prev) => applyLocalPatch(prev, partial));
+
+              // 3) Notify the app so the parent can sync its segments state (no prop changes required)
+              try {
+                window.dispatchEvent(
+                  new CustomEvent("rundown:item-patched", {
+                    detail: { itemId: selectedItem.id, patch: partial },
+                  })
+                );
+              } catch (_) {
+                // no-op if CustomEvent is unavailable
               }
             }}
           />

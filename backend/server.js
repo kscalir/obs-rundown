@@ -15,6 +15,7 @@ const itemsRouter = require('./src/routes/items');
 const templateRegistry = require('./services/templateRegistry');
 const graphicsRouter = require('./src/routes/graphics');
 const obsRoutes = require('./src/routes/obsRoutes');
+const db = require('./services/database');
 
 // Create Express app
 const app = express();
@@ -31,6 +32,9 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static media files
+app.use('/media', express.static(path.join(__dirname, 'media')));
 
 // Mount routes
 app.use('/api/shows', showsRouter);
@@ -82,6 +86,14 @@ const PORT = process.env.PORT || 5050;
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+// Initialize database
+try {
+  db.initialize();
+  console.log('Database initialized successfully');
+} catch (err) {
+  console.error('Failed to initialize database:', err);
+}
 
 // Initialize template registry
 templateRegistry.initialize().then(() => {

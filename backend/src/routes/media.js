@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { getDb, handleError } = require('../utils/db');
+const db = require('../../services/database');
 const sharp = require('sharp');
 const ffprobe = require('ffprobe');
 const ffprobeStatic = require('ffprobe-static');
@@ -28,7 +28,7 @@ const upload = multer({ storage: storage });
 
 // GET all media for show (matches your frontend URL pattern)
 router.get('/show/:showId', (req, res) => {
-  const db = getDb();
+  const database = db.getDb();
   const { type, search } = req.query;
   
   let query = 'SELECT * FROM media WHERE show_id = ?';
@@ -46,11 +46,12 @@ router.get('/show/:showId', (req, res) => {
   
   query += ' ORDER BY id DESC';
   
-  db.all(query, params, (err, rows) => {
-    db.close();
-    if (err) return handleError(res, err, 'query');
+  try {
+    const rows = db.executeQuery(query, params);
     res.json(rows);
-  });
+  } catch (err) {
+    return db.handleError(res, err, 'query');
+  }
 });
 
 // POST upload new media
@@ -64,7 +65,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     return res.status(400).json({ error: 'Show ID required' });
   }
   
-  const db = getDb();
+  const database = db.getDb();
   const mediaType = req.file.mimetype.split('/')[0]; // 'image', 'video', 'audio'
   const displayName = name || req.file.originalname;
   
@@ -125,30 +126,25 @@ router.post('/', upload.single('file'), async (req, res) => {
     // Continue with upload even if processing fails
   }
   
-  db.run(
-    `INSERT INTO media (show_id, filename, type, originalname, thumb, name, size, duration) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [showId, req.file.filename, mediaType, req.file.originalname, 
-     thumbFilename, displayName, req.file.size, duration],
-    function(err) {
-      if (err) {
-        db.close();
-        // Clean up uploaded file on error
-        fs.unlink(req.file.path, () => {});
-        if (thumbFilename) {
-          fs.unlink(path.join(__dirname, '../../media/thumbs', thumbFilename), () => {});
-        }
-        return handleError(res, err, 'insert');
-      }
-      
-      db.get('SELECT * FROM media WHERE id = ?', [this.lastID], (err, row) => {
-        db.close();
-        if (err) return handleError(res, err, 'query');
-        console.log('Media inserted with duration:', row);
-        res.json(row);
-      });
+  try {
+    const result = db.executeRun(
+      `INSERT INTO media (show_id, filename, type, originalname, thumb, name, size, duration) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [showId, req.file.filename, mediaType, req.file.originalname, 
+       thumbFilename, displayName, req.file.size, duration]
+    );
+    
+    const row = db.executeGet('SELECT * FROM media WHERE id = ?', [result.lastInsertRowid]);
+    console.log('Media inserted with duration:', row);
+    res.json(row);
+  } catch (err) {
+    // Clean up uploaded file on error
+    fs.unlink(req.file.path, () => {});
+    if (thumbFilename) {
+      fs.unlink(path.join(__dirname, '../../media/thumbs', thumbFilename), () => {});
     }
-  );
+    return db.handleError(res, err, 'insert');
+  }
 });
 
 // PUT update media name
@@ -158,51 +154,43 @@ router.put('/:mediaId/name', express.json(), (req, res) => {
     return res.status(400).json({ error: 'Name required' });
   }
   
-  const db = getDb();
-  db.run(
-    'UPDATE media SET name = ? WHERE id = ?',
-    [name.trim(), req.params.mediaId],
-    function(err) {
-      db.close();
-      if (err) return handleError(res, err, 'update');
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Media not found' });
-      }
-      res.json({ success: true });
+  try {
+    const result = db.executeRun(
+      'UPDATE media SET name = ? WHERE id = ?',
+      [name.trim(), req.params.mediaId]
+    );
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Media not found' });
     }
-  );
+    res.json({ success: true });
+  } catch (err) {
+    return db.handleError(res, err, 'update');
+  }
 });
 
 // DELETE media
 router.delete('/:mediaId', (req, res) => {
-  const db = getDb();
-  
-  // First get the file info to delete the actual file
-  db.get('SELECT filename FROM media WHERE id = ?', [req.params.mediaId], (err, row) => {
-    if (err) {
-      db.close();
-      return handleError(res, err, 'query');
-    }
+  try {
+    // First get the file info to delete the actual file
+    const row = db.executeGet('SELECT filename FROM media WHERE id = ?', [req.params.mediaId]);
     
     if (!row) {
-      db.close();
       return res.status(404).json({ error: 'Media not found' });
     }
     
     // Delete from database
-    db.run('DELETE FROM media WHERE id = ?', [req.params.mediaId], function(err) {
-      db.close();
-      if (err) return handleError(res, err, 'delete');
-      
-      // Delete actual file - use media directory instead of uploads
-      const filePath = path.join(__dirname, '../../media', row.filename);
-      fs.unlink(filePath, (unlinkErr) => {
-        if (unlinkErr) console.error('Error deleting file:', unlinkErr);
-      });
-      
-      res.json({ success: true });
+    db.executeRun('DELETE FROM media WHERE id = ?', [req.params.mediaId]);
+    
+    // Delete actual file - use media directory instead of uploads
+    const filePath = path.join(__dirname, '../../media', row.filename);
+    fs.unlink(filePath, (unlinkErr) => {
+      if (unlinkErr) console.error('Error deleting file:', unlinkErr);
     });
-  });
+    
+    res.json({ success: true });
+  } catch (err) {
+    return db.handleError(res, err, 'delete');
+  }
 });
 
 module.exports = router;

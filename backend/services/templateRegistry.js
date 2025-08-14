@@ -233,10 +233,6 @@ class TemplateRegistry {
     }));
   }
   
-  // Get full template details (internal use)
-  getTemplateFull(id) {
-    return this.templates[id] || null;
-  }
   
   // Get a specific template by ID (normalized)
   getTemplate(id) {
@@ -300,48 +296,6 @@ class TemplateRegistry {
     return this.getAllTemplates();
   }
   
-  // Add GDD XML parsing
-  parseGDDTemplate(templatePath) {
-    const xmlPath = path.join(templatePath, 'templateInfo.xml');
-    
-    if (fs.existsSync(xmlPath)) {
-      const xmlContent = fs.readFileSync(xmlPath, 'utf8');
-      // Parse GDD XML and extract component definitions
-      // This would need a proper XML parser for production
-      
-      return {
-        type: 'gdd',
-        xmlPath,
-        components: this.extractGDDComponents(xmlContent)
-      };
-    }
-    
-    return null;
-  }
-
-  extractGDDComponents(xmlContent) {
-    // Basic extraction - in production use a proper XML parser
-    const components = [];
-    const componentMatches = xmlContent.match(/<component id="([^"]+)"[\s\S]*?<\/component>/g) || [];
-    
-    componentMatches.forEach(match => {
-      const idMatch = match.match(/id="([^"]+)"/);
-      const nameMatch = match.match(/<name>([^<]+)<\/name>/);
-      const typeMatch = match.match(/<type>([^<]+)<\/type>/);
-      const valueMatch = match.match(/<value>([^<]+)<\/value>/);
-      
-      if (idMatch) {
-        components.push({
-          id: idMatch[1],
-          name: nameMatch ? nameMatch[1] : idMatch[1],
-          type: typeMatch ? typeMatch[1] : 'text',
-          default: valueMatch ? valueMatch[1] : ''
-        });
-      }
-    });
-    
-    return components;
-  }
 }
 
 // Create and export singleton instance
