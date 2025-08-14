@@ -140,15 +140,56 @@ if (
 }
 
     // ITEMS: created from toolbox → group
-    if (source.droppableId === "toolbox" && destination.droppableId.startsWith("items-")) {
+    if ((source.droppableId === "toolbox" || source.droppableId === "obs-scenes") && destination.droppableId.startsWith("items-")) {
       const [, segId, groupId] = destination.droppableId.split("-");
-      const parts = draggableId.split("-");
-      const isObsScene = parts[1] === "obsscene";
-      const moduleType = isObsScene ? "obscommand" : parts[1];
-      const sceneName = isObsScene ? parts.slice(2).join("-") : null;
-
-      const title = isObsScene ? `Switch to Scene: ${sceneName}` : `New ${moduleType}`;
-      const data = isObsScene ? { command: "SetCurrentProgramScene", parameters: { sceneName } } : {};
+      
+      // Handle new draggableId format: "toolbox:item:id" or "toolbox:scene:id"
+      const parts = draggableId.includes(":") ? draggableId.split(":") : draggableId.split("-");
+      const isObsScene = (parts.length >= 3 && parts[1] === "scene") || parts[1] === "obsscene";
+      
+      // Handle new FullScreen toolbox items
+      const isFullScreenType = parts.length >= 3 && parts[1] === "item" && 
+        (parts[2] === "fullscreen-graphic" || 
+         parts[2] === "fullscreen-video" || 
+         parts[2] === "fullscreen-youtube" || 
+         parts[2] === "fullscreen-pdfimage");
+      
+      let moduleType, title, data;
+      
+      if (isObsScene) {
+        moduleType = "obscommand";
+        // Handle both old format (toolbox-obsscene-SceneName) and new format (toolbox:scene:sceneKey)
+        const sceneName = parts.length >= 3 && parts[1] === "scene" 
+          ? parts[2].replace(/^name:/, '') // Remove "name:" prefix if present
+          : parts.slice(2).join("-"); // Legacy format
+        title = `Switch to Scene: ${sceneName}`;
+        data = { command: "SetCurrentProgramScene", parameters: { sceneName } };
+      } else if (isFullScreenType) {
+        // Map the item IDs to module types
+        const itemTypeMap = {
+          'fullscreen-graphic': 'FullScreenGraphic',
+          'fullscreen-video': 'FullScreenVideo', 
+          'fullscreen-youtube': 'FullScreenYouTube',
+          'fullscreen-pdfimage': 'FullScreenPdfImage'
+        };
+        moduleType = itemTypeMap[parts[2]] || 'FullScreenGraphic';
+        const typeDisplayNames = {
+          'FullScreenGraphic': 'Full Screen Graphic',
+          'FullScreenVideo': 'Full Screen Video', 
+          'FullScreenYouTube': 'Full Screen YouTube',
+          'FullScreenPdfImage': 'Full Screen PDF/Image'
+        };
+        title = typeDisplayNames[moduleType] || `New ${moduleType}`;
+        data = {
+          transition: { type: "cut", durationSec: 0 },
+          notes: ""
+        };
+      } else {
+        // Legacy handling for other toolbox items
+        moduleType = parts.length >= 3 ? parts[2] : parts[1];
+        title = `New ${moduleType}`;
+        data = {};
+      }
 
       try {
         const created = await api.post(`/api/items`, {
@@ -166,22 +207,35 @@ if (
             : created?.data || {}
         };
 
-        const next = segments.map(seg => {
-          if (!idEq(seg.id, segId)) return seg;
-          return {
-            ...seg,
-            groups: (seg.groups || []).map(g => {
-              if (!idEq(g.id, groupId)) return g;
-              const items = [...(g.items || [])];
-              items.splice(destination.index, 0, normalized);
-              return { ...g, items };
-            })
-          };
-        });
-        setSegments(next);
-        const updatedSeg = next.find(s => idEq(s.id, segId));
-        const updatedGrp = updatedSeg?.groups.find(g => idEq(g.id, groupId));
-        flushItems(updatedGrp);
+        // Delay state update until after drag operation completes
+        // This prevents the "attempting to add Draggable while drag is occurring" error
+        setTimeout(() => {
+          let updatedSeg, updatedGrp;
+          setSegments(prevSegments => {
+            const next = prevSegments.map(seg => {
+              if (!idEq(seg.id, segId)) return seg;
+              return {
+                ...seg,
+                groups: (seg.groups || []).map(g => {
+                  if (!idEq(g.id, groupId)) return g;
+                  const items = [...(g.items || [])];
+                  items.splice(destination.index, 0, normalized);
+                  return { ...g, items };
+                })
+              };
+            });
+            
+            // Cache the updated segment and group for flushing
+            updatedSeg = next.find(s => idEq(s.id, segId));
+            updatedGrp = updatedSeg?.groups.find(g => idEq(g.id, groupId));
+            
+            return next;
+          });
+          
+          flushItems(updatedGrp);
+        }, 0);
+        
+        // Toolbox drop completed successfully
       } catch (e) {
         console.warn("[create item]", e);
       }

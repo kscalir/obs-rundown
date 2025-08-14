@@ -37,7 +37,15 @@ export const useSlotSelection = (itemId) => {
       const item = await response.json();
       const slotsData = item.data?.slots || [];
       
+      console.log('[useSlotSelection] Loaded item from DB:', item);
       console.log('[useSlotSelection] Loaded slots from DB:', slotsData);
+      
+      // Debug: Check for media data in slots
+      slotsData.forEach((slot, idx) => {
+        if (slot.mediaData) {
+          console.log(`[useSlotSelection] Slot ${idx} has mediaData:`, slot.mediaData);
+        }
+      });
       setSlots(slotsData);
       setSlotsReady(true);
       isInitialLoadRef.current = false;
@@ -67,7 +75,13 @@ export const useSlotSelection = (itemId) => {
     // Debounced save
     saveTimeoutRef.current = setTimeout(async () => {
       try {
-        console.log('[useSlotSelection] Saving slots:', newSlots);
+        console.log('[useSlotSelection] Saving slots:', JSON.stringify(newSlots, null, 2));
+        
+        // Debug: Check if we have mediaData to save
+        const slotsWithMediaData = newSlots.filter(slot => slot.mediaData);
+        if (slotsWithMediaData.length > 0) {
+          console.log('[useSlotSelection] Found slots with mediaData:', slotsWithMediaData);
+        }
         
         const response = await fetch(`${API_BASE_URL}/api/items/${itemId}`, {
           method: 'PATCH',
@@ -110,15 +124,80 @@ export const useSlotSelection = (itemId) => {
     });
   }, [saveSlots]);
 
-  // Merge slots with OBS scene layout (preserving selectedSource)
+  // Update a specific slot's mediaData and properties
+  const updateSlotMediaData = useCallback((slotIndex, mediaData) => {
+    setSlots(prevSlots => {
+      const newSlots = [...prevSlots];
+      if (newSlots[slotIndex]) {
+        const oldSlot = { ...newSlots[slotIndex] };
+        // Determine selectedSource based on data type
+        let selectedSource = "";
+        if (mediaData) {
+          if (mediaData.media) {
+            // Regular media data
+            selectedSource = `MEDIA:${mediaData.media.id}`;
+          } else if (mediaData.youtube) {
+            // YouTube data
+            selectedSource = `YOUTUBE:${mediaData.youtube.videoId}`;
+          } else if (mediaData.pdfImage) {
+            // PDF/Image data
+            selectedSource = `PDFIMAGE:${mediaData.pdfImage.id}`;
+          }
+        }
+        
+        const updatedSlot = {
+          ...newSlots[slotIndex],
+          mediaData,
+          selectedSource
+        };
+        newSlots[slotIndex] = updatedSlot;
+        
+        console.log('[useSlotSelection] Updated slot with media data for index:', slotIndex);
+      }
+      
+      // Save to database
+      saveSlots(newSlots);
+      
+      return newSlots;
+    });
+  }, [saveSlots]);
+
+  // Update a specific slot's genericType
+  const updateSlotGenericType = useCallback((slotIndex, genericType) => {
+    setSlots(prevSlots => {
+      const newSlots = [...prevSlots];
+      if (newSlots[slotIndex]) {
+        newSlots[slotIndex] = {
+          ...newSlots[slotIndex],
+          genericType
+        };
+      }
+      
+      console.log('[useSlotSelection] Updated slot generic type:', {
+        slotIndex,
+        genericType,
+        newSlots
+      });
+      
+      // Save to database
+      saveSlots(newSlots);
+      
+      return newSlots;
+    });
+  }, [saveSlots]);
+
+  // Merge slots with OBS scene layout (preserving selectedSource and other data)
   const mergeWithSceneLayout = useCallback((sceneSlots) => {
     setSlots(prevSlots => {
-      // Create a map of existing selectedSource values by slot number
-      const existingSelections = {};
+      // Create a map of existing slot data by slot number
+      const existingSlotData = {};
       prevSlots.forEach(slot => {
-        if (slot.selectedSource) {
-          existingSelections[slot.slot] = slot.selectedSource;
-        }
+        existingSlotData[slot.slot] = {
+          selectedSource: slot.selectedSource,
+          mediaData: slot.mediaData,
+          genericType: slot.genericType,
+          sourceProps: slot.sourceProps
+        };
       });
 
       // Defer merging scene layout until we have loaded DB state once for this item.
@@ -133,15 +212,21 @@ export const useSlotSelection = (itemId) => {
         return prevSlots;
       }
 
-      // Always merge scene layout structure, but preserve selectedSource from DB/prev state
-      const mergedSlots = sceneSlots.map(sceneSlot => ({
-        ...sceneSlot,
-        selectedSource: existingSelections[sceneSlot.slot] || sceneSlot.selectedSource || ''
-      }));
+      // Always merge scene layout structure, but preserve all existing data from DB/prev state
+      const mergedSlots = sceneSlots.map(sceneSlot => {
+        const existingData = existingSlotData[sceneSlot.slot] || {};
+        return {
+          ...sceneSlot,
+          selectedSource: existingData.selectedSource || sceneSlot.selectedSource || '',
+          mediaData: existingData.mediaData,
+          genericType: existingData.genericType,
+          sourceProps: existingData.sourceProps
+        };
+      });
 
       console.log('[useSlotSelection] Merged with scene layout:', {
         hasLoadedData: hasLoadedDataRef.current,
-        existingSelections,
+        existingSlotData,
         sceneSlots,
         mergedSlots
       });
@@ -174,6 +259,8 @@ export const useSlotSelection = (itemId) => {
     error,
     slotsReady,
     updateSlotSource,
+    updateSlotMediaData,
+    updateSlotGenericType,
     mergeWithSceneLayout,
     refetch: fetchSlots
   };

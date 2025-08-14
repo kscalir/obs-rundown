@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from "react"
 import { toast } from "react-toastify";
 import GraphicsTemplateEditor from "./GraphicsTemplateEditor.jsx";
 import SlotSelector from "./SlotSelector.jsx";
+import MediaPicker from "../MediaPicker.jsx";
+import YouTubePicker from "../YouTubePicker.jsx";
 import { useSlotSelection } from "../../hooks/useSlotSelection.js";
 
 const GENERIC_SLOTS_MODE = (
@@ -132,6 +134,8 @@ export default function ObsSceneEditor({ item, onPatch, applyToObs = false }) {
     slots, 
     isLoading: slotsLoading, 
     updateSlotSource, 
+    updateSlotMediaData,
+    updateSlotGenericType,
     mergeWithSceneLayout 
   } = useSlotSelection(itemId);
   const [sceneItems, setSceneItems] = useState([]);
@@ -166,8 +170,6 @@ export default function ObsSceneEditor({ item, onPatch, applyToObs = false }) {
   // Ephemeral selection of a graphic per slot (UI-only until we add persistence)
 const [selectedGraphicBySlot, setSelectedGraphicBySlot] = useState({});
 
-// Track thumbnail URLs for graphics
-const [thumbnailUrls, setThumbnailUrls] = useState({});
 
 // Simple modal state for picking a graphic
 const [gfxModal, setGfxModal] = useState({ open: false, slot: null });
@@ -177,6 +179,51 @@ const [gfxError, setGfxError] = useState("");
 // --- Graphic editor modal state (inline editor)
 const [gfxEditor, setGfxEditor] = useState({ open: false, graphicId: null, slot: null });
 const keepEditorOpenOnSaveRef = useRef(false);
+
+// --- Media picker modal state
+const [mediaPickerModal, setMediaPickerModal] = useState({ open: false, slot: null });
+const [selectedMediaBySlot, setSelectedMediaBySlot] = useState({});
+
+// --- YouTube picker modal state
+const [youtubePickerModal, setYoutubePickerModal] = useState({ open: false, slot: null });
+const [selectedYouTubeBySlot, setSelectedYouTubeBySlot] = useState({});
+
+// --- PDF/Image picker modal state  
+const [pdfImagePickerModal, setPdfImagePickerModal] = useState({ open: false, slot: null });
+const [selectedPdfImageBySlot, setSelectedPdfImageBySlot] = useState({});
+
+// Load media, YouTube, and PDF/Image selections from database when slots change
+useEffect(() => {
+  const mediaSelections = {};
+  const youtubeSelections = {};
+  const pdfImageSelections = {};
+  
+  (slots || []).forEach(slot => {
+    if (slot.mediaData) {
+      console.log('[ObsSceneEditor] Loading slot data for slot:', slot.slot, slot.mediaData);
+      
+      // Check data type and route to appropriate state
+      if (slot.mediaData.youtube) {
+        console.log('[ObsSceneEditor] Found YouTube data for slot:', slot.slot);
+        youtubeSelections[slot.slot] = slot.mediaData;
+      } else if (slot.mediaData.pdfImage) {
+        console.log('[ObsSceneEditor] Found PDF/Image data for slot:', slot.slot);
+        pdfImageSelections[slot.slot] = slot.mediaData;
+      } else if (slot.mediaData.media) {
+        console.log('[ObsSceneEditor] Found media data for slot:', slot.slot);
+        mediaSelections[slot.slot] = slot.mediaData;
+      }
+    }
+  });
+  
+  console.log('[ObsSceneEditor] Setting selectedMediaBySlot:', mediaSelections);
+  console.log('[ObsSceneEditor] Setting selectedYouTubeBySlot:', youtubeSelections);
+  console.log('[ObsSceneEditor] Setting selectedPdfImageBySlot:', pdfImageSelections);
+  
+  setSelectedMediaBySlot(mediaSelections);
+  setSelectedYouTubeBySlot(youtubeSelections);
+  setSelectedPdfImageBySlot(pdfImageSelections);
+}, [slots]);
 
 const openGraphicEditor = (row, slotNumber) => {
   setGfxEditor({
@@ -218,53 +265,8 @@ const onGraphicSaved = (updatedRow) => {
     }
     return prev;
   });
-
-  // Generate thumbnail for the saved graphic (design-time generation)
-  generateThumbnailForGraphic(norm.id);
 };
 
-// Generate thumbnail for a graphic after save
-const generateThumbnailForGraphic = async (graphicId) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/graphics/${graphicId}/thumbnail`, {
-      method: 'POST'
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      if (data.url) {
-        // Update thumbnail URL in state
-        setThumbnailUrls(prev => ({
-          ...prev,
-          [graphicId]: `${API_BASE_URL}${data.url}`
-        }));
-        
-        // Update selected graphic if it's the one we just generated
-        setSelectedGraphicBySlot(prev => {
-          const updated = { ...prev };
-          Object.keys(updated).forEach(slot => {
-            if (updated[slot] && updated[slot].id === graphicId) {
-              updated[slot] = {
-                ...updated[slot],
-                thumb: `${API_BASE_URL}${data.url}`
-              };
-            }
-          });
-          return updated;
-        });
-        
-        // Update graphics list
-        setGfxList(prev => prev.map(graphic => 
-          graphic.id === graphicId 
-            ? { ...graphic, thumb: `${API_BASE_URL}${data.url}` }
-            : graphic
-        ));
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to generate thumbnail for graphic:', graphicId, error);
-  }
-};
 
   // Simple scene data save (no slots - handled by useSlotSelection)
   const saveSceneData = useCallback(async (sceneData) => {
@@ -504,66 +506,55 @@ const generateThumbnailForGraphic = async (graphicId) => {
   }, [data.scene]);
 
   // EFFECT (post-paint): sync ephemeral generic types when slots change (read-only bootstrap).
-  // This runs after slots are merged/loaded. It won't overwrite a user's manual pick.
+  // This runs after slots are merged/loaded. Always sync with database values.
   useEffect(() => {
     if (!Array.isArray(slots) || slots.length === 0) return;
     setGenericTypesBySlot(prev => {
       const next = { ...prev };
       for (const s of slots) {
         if (!s || typeof s.slot !== 'number') continue;
-        // Only initialize if we have no user-set value for this slot.
-        if (next[s.slot] == null) {
-          next[s.slot] = s.genericType || deriveSlotType(s);
-        }
+        // Always sync with the database value to ensure consistency
+        next[s.slot] = s.genericType || deriveSlotType(s);
       }
       return next;
     });
   }, [slots]);
 
-  // EFFECT: Preload graphics list and prefetch thumbnails for selected graphics
+  // EFFECT: Preload graphics list
   useEffect(() => {
     console.log('Effect running: checking slots for graphics', slots.length, 'slots, gfxList:', gfxList.length);
-    
+
     // Check if we need to load graphics (if any slot has a GRAPHIC: selection but gfxList is empty)
     const needsGraphicsLoad = gfxList.length === 0 && slots.some(slot => 
       slot?.selectedSource?.startsWith('GRAPHIC:')
     );
-    
-    if (needsGraphicsLoad) {
-      console.log('Loading graphics list for selected graphics...');
-      const loadGraphics = async () => {
-        try {
-          setGfxLoading(true);
-          const episodeId = data.episodeId || data.episode_id || '1.0'; // fallback episode
-          const url = `${API_BASE_URL}/api/graphics?episodeId=${encodeURIComponent(episodeId)}&limit=100`;
-          const res = await fetch(url);
-          if (!res.ok) {
-            console.warn('Failed to load graphics:', res.statusText);
-            return;
-          }
-          const list = await res.json();
-          const rows = Array.isArray(list) ? list : (list?.rows || list?.data || []);
-          const norm = (rows || []).map(normalizeGraphicRow).filter(r => r.id != null);
-          setGfxList(norm);
-          console.log('Loaded graphics list:', norm.length, 'graphics');
-        } catch (err) {
-          console.warn('Failed to preload graphics:', err);
-        } finally {
-          setGfxLoading(false);
+
+    if (!needsGraphicsLoad) return;
+
+    console.log('Loading graphics list for selected graphics...');
+    const loadGraphics = async () => {
+      try {
+        setGfxLoading(true);
+        const episodeId = data.episodeId || data.episode_id || '1.0'; // fallback episode
+        const url = `${API_BASE_URL}/api/graphics?episodeId=${encodeURIComponent(episodeId)}&limit=100`;
+        const res = await fetch(url);
+        if (!res.ok) {
+          console.warn('Failed to load graphics:', res.statusText);
+          return;
         }
-      };
-      loadGraphics();
-    }
-    
-    // Prefetch thumbnails
-    slots.forEach(slot => {
-      const selectedGraphic = getSelectedGraphicForSlot(slot.slot);
-      if (selectedGraphic && selectedGraphic.id && !selectedGraphic.thumb && !thumbnailUrls[selectedGraphic.id]) {
-        console.log('Fetching thumbnail for graphic:', selectedGraphic.id);
-        fetchThumbnail(selectedGraphic.id);
+        const list = await res.json();
+        const rows = Array.isArray(list) ? list : (list?.rows || list?.data || []);
+        const norm = (rows || []).map(normalizeGraphicRow).filter(r => r.id != null);
+        setGfxList(norm);
+        console.log('Loaded graphics list:', norm.length, 'graphics');
+      } catch (err) {
+        console.warn('Failed to preload graphics:', err);
+      } finally {
+        setGfxLoading(false);
       }
-    });
-  }, [slots, gfxList, thumbnailUrls, data.episodeId, data.episode_id]);
+    };
+    loadGraphics();
+  }, [slots, gfxList.length, data.episodeId, data.episode_id]);
 
   // EFFECT (layout reaction): track image/container size to position overlay labels correctly.
   useEffect(() => {
@@ -627,6 +618,42 @@ function getEpisodeIdFromAnywhere(item) {
   return null;
 }
 
+// Returns a numeric show_id from anywhere we can find it (item or URL)
+function getShowIdFromAnywhere(item) {
+  // Try direct show_id references first
+  const directShowId =
+    item?.show_id ??
+    item?.showId ??
+    item?.data?.show_id ??
+    item?.data?.showId ??
+    item?.show?.id ??
+    null;
+
+  if (directShowId != null && directShowId !== '') return Number(directShowId);
+
+  // Try to get from episode data if no direct show reference
+  const episodeId = getEpisodeIdFromAnywhere(item);
+  if (episodeId) {
+    // For now, assume episode ID is the same as show ID
+    // This might need adjustment based on your data model
+    return Number(episodeId);
+  }
+
+  // Try URL parameters
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.has('show')) return Number(sp.get('show'));
+  } catch (_) { /* SSR/no-window safe */ }
+
+  // Try localStorage (same key as used in App.jsx)
+  try {
+    const savedShowId = localStorage.getItem("obsRundownShowId");
+    if (savedShowId) return Number(savedShowId);
+  } catch (_) { /* SSR/no-localStorage safe */ }
+
+  return null;
+}
+
   // Derive a generic slot label for read-only display (no persistence yet)
   const deriveSlotType = (slot) => {
     const name = String(slot?.selectedSource || "").trim();
@@ -639,59 +666,137 @@ function getEpisodeIdFromAnywhere(item) {
   };
 
 // Persist only the slots array to the item.data without touching other fields
-const persistSlots = useCallback(async (nextSlots) => {
-  try {
-    const existing = (item && item.data) ? item.data : {};
-    const mergedData = { ...existing, slots: nextSlots };
-
-    if (typeof onPatch === 'function') {
-      await onPatch({ data: mergedData });
-    } else {
-      if (!itemId) throw new Error('Missing itemId to persist slots');
-      const res = await fetch(`${API_BASE_URL}/api/items/${String(itemId)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: mergedData })
-      });
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(t || `Failed to persist slots for item ${itemId}`);
-      }
-    }
-  } catch (err) {
-    console.warn('[ObsSceneEditor] persistSlots failed', err);
-    toast.error(err?.message || 'Failed to save slot settings');
-  }
-}, [item, itemId, onPatch, toast]);
+// Note: persistSlots function removed - now using useSlotSelection hook functions
 
 // Persisted setter for Generic Type (saved into item.data.slots[*].genericType)
 const setGenericTypeForSlot = (slotNumber, typeLabel) => {
   // update UI immediately
   setGenericTypesBySlot(prev => ({ ...prev, [slotNumber]: typeLabel }));
 
-  // write into the slots array and persist
-  const next = (slots || []).map(s => {
-    if (!s || s.slot !== slotNumber) return s;
-    return { ...s, genericType: typeLabel };
-  });
-
-  // fire-and-forget persistence; UI is already updated
-  persistSlots(next);
+  // Find slot index and update through the hook
+  const slotIndex = (slots || []).findIndex(s => s && s.slot === slotNumber);
+  
+  if (slotIndex !== -1) {
+    // Use the hook's function to update and persist the generic type
+    updateSlotGenericType(slotIndex, typeLabel);
+  }
 };
 
-// Normalize a DB row into modal list shape
-const normalizeGraphicRow = (g) => ({
-  id: g.id ?? g.graphic_id ?? g.uuid ?? null,
-  type: g.type || g.template_type || g.template_id || g.templateId || 'Graphic',
-  title: g.title || g.name || (g.templateData && (g.templateData.title || g.templateData.headline)) || `Graphic ${g.id || ''}`,
-  summary: (() => {
-    const td = g.templateData || g.template_data || {};
-    const obj = typeof td === 'string' ? (()=>{ try { return JSON.parse(td); } catch { return {}; } })() : td;
-    const fields = Object.values(obj).filter(v => typeof v === 'string' && v.trim());
-    return fields.slice(0, 2).join(' — ');
-  })(),
-  thumb: g.thumbnail && typeof g.thumbnail === 'string' ? `${API_BASE_URL}/media/thumbs/${g.thumbnail}` : g.thumb || null,
-});
+const normalizeGraphicRow = (g) => {
+  const rawTd = g.templateData || g.template_data || {};
+  const templateDataObj = typeof rawTd === 'string' ? (() => { try { return JSON.parse(rawTd); } catch { return {}; } })() : (rawTd || {});
+  const templateId = g.templateId || g.template_id || g.template || g.template_name || null;
+  const displayTitle = g.title || g.name || (templateDataObj && (templateDataObj.title || templateDataObj.headline)) || `Graphic ${g.id || ''}`;
+  return {
+    id: g.id ?? g.graphic_id ?? g.uuid ?? null,
+    type: g.type || g.template_type || templateId || 'Graphic',
+    title: displayTitle,
+    summary: (() => {
+      const fields = Object.values(templateDataObj).filter(v => typeof v === 'string' && v.trim());
+      return fields.slice(0, 2).join(' — ');
+    })(),
+    templateId,
+    templateData: templateDataObj
+  };
+};
+const buildGraphicsPreviewUrl = (graphic) => {
+  if (!graphic) return '';
+  const tplId = graphic.templateId || graphic.template_id;
+  if (!tplId) return '';
+  const dataObj = graphic.templateData || graphic.template_data || {};
+  const q = encodeURIComponent(JSON.stringify(dataObj || {}));
+  return `${API_BASE_URL}/api/templates/${encodeURIComponent(tplId)}/preview?data=${q}`;
+};
+
+// Small preview that opens a modal zoom while mouse/touch is held
+function HoldToZoomModalPreview({ url, containerWidth = 128, containerHeight = 72, baseWidth = 1920, baseHeight = 1080 }) {
+  const [zooming, setZooming] = React.useState(false);
+
+  // Scale used for the inline thumbnail
+  const thumbScale = containerWidth / baseWidth;
+
+  const start = (e) => { e.preventDefault(); setZooming(true); };
+  const stop = () => setZooming(false);
+
+  // Compute modal scale to fit up to 90vw x 85vh without exceeding 1:1
+  const modalScale = React.useMemo(() => {
+    const vw = (typeof window !== 'undefined' ? window.innerWidth : 1280) * 0.9;
+    const vh = (typeof window !== 'undefined' ? window.innerHeight : 800) * 0.85;
+    const sx = vw / baseWidth;
+    const sy = vh / baseHeight;
+    return Math.min(1, Math.min(sx, sy));
+  }, [baseWidth, baseHeight]);
+
+  return (
+    <div
+      style={{ position: 'relative', width: containerWidth, height: containerHeight, overflow: 'hidden', cursor: 'zoom-in' }}
+      onMouseDown={start}
+      onMouseUp={stop}
+      onMouseLeave={stop}
+      onTouchStart={start}
+      onTouchEnd={stop}
+    >
+      {/* Thumbnail (always visible) */}
+      <iframe
+        title={`gfx-thumb-${Math.random().toString(36).slice(2)}`}
+        src={url}
+        style={{
+          width: baseWidth,
+          height: baseHeight,
+          border: 0,
+          display: 'block',
+          transform: `scale(${thumbScale})`,
+          transformOrigin: 'top left',
+          pointerEvents: 'none',
+          borderRadius: 4
+        }}
+        sandbox="allow-scripts allow-same-origin"
+      />
+
+      {/* Modal zoom (shows while mouse/touch is held) */}
+      {zooming && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100000 }}
+          onMouseUp={stop}
+          onMouseLeave={stop}
+          onTouchEnd={stop}
+          onClick={stop}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              maxWidth: '90vw',
+              maxHeight: '85vh',
+              overflow: 'hidden',
+              background: '#111',
+              borderRadius: 8,
+              boxShadow: '0 12px 28px rgba(0,0,0,0.35)'
+            }}
+          >
+            <iframe
+              title={`gfx-zoom-${Math.random().toString(36).slice(2)}`}
+              src={url}
+              style={{
+                width: baseWidth,
+                height: baseHeight,
+                border: 0,
+                display: 'block',
+                transform: `scale(${modalScale})`,
+                transformOrigin: 'top left',
+                pointerEvents: 'none'
+              }}
+              sandbox="allow-scripts allow-same-origin"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// Open Graphics picker modal;
 
 // Open Graphics picker modal; fetch list for the current episode/item context
 const openGraphicsModal = async (slotNumber) => {
@@ -906,30 +1011,293 @@ const createAndOpenNewGraphic = async (slotNumber) => {
   }
 };
 
+// --- Media picker functions
+const openMediaPicker = (slotNumber) => {
+  setMediaPickerModal({ open: true, slot: slotNumber });
+};
+
+const closeMediaPicker = () => {
+  setMediaPickerModal({ open: false, slot: null });
+};
+
+const handleMediaSelected = (media) => {
+  console.log('[ObsSceneEditor] handleMediaSelected called with media:', media);
+  
+  const slotNumber = mediaPickerModal.slot;
+  if (slotNumber) {
+    const defaultProperties = {
+      loop: false,
+      continue: false,
+      audio: false,
+      volume: 100,
+      fadeIn: false,
+      fadeOut: false
+    };
+    
+    const mediaDataObject = {
+      media: media,
+      properties: defaultProperties
+    };
+    
+    console.log('[ObsSceneEditor] Creating mediaData object:', mediaDataObject);
+    
+    // Store the media selection with default properties in local state for UI
+    setSelectedMediaBySlot(prev => ({
+      ...prev,
+      [slotNumber]: mediaDataObject
+    }));
+    
+    // Find slot index for the hook's updateSlotMediaData function
+    const slotIndex = (slots || []).findIndex(s => s && s.slot === slotNumber);
+    
+    console.log('[ObsSceneEditor] Found slot index:', slotIndex, 'for slot number:', slotNumber);
+    
+    if (slotIndex !== -1) {
+      console.log('[ObsSceneEditor] Updating slot media data for index:', slotIndex);
+      
+      // Use the hook's function to update and persist the slot media data
+      updateSlotMediaData(slotIndex, mediaDataObject);
+      
+      // Automatically set the genericType to Video when media is selected
+      updateSlotGenericType(slotIndex, 'Video');
+    }
+  }
+  closeMediaPicker();
+};
+
+const getSelectedMediaForSlot = (slotNumber) => {
+  return selectedMediaBySlot[slotNumber] || null;
+};
+
+const updateMediaProperty = (slotNumber, property, value) => {
+  // Update local state immediately
+  setSelectedMediaBySlot(prev => ({
+    ...prev,
+    [slotNumber]: {
+      ...prev[slotNumber],
+      properties: {
+        ...prev[slotNumber].properties,
+        [property]: value
+      }
+    }
+  }));
+  
+  // Find slot index and update through the hook
+  const slotIndex = (slots || []).findIndex(s => s && s.slot === slotNumber);
+  
+  if (slotIndex !== -1 && slots[slotIndex].mediaData) {
+    // Use the hook's function to update and persist the slot media data
+    const updatedMediaData = {
+      ...slots[slotIndex].mediaData,
+      properties: {
+        ...slots[slotIndex].mediaData.properties,
+        [property]: value
+      }
+    };
+    
+    updateSlotMediaData(slotIndex, updatedMediaData);
+  }
+};
+
+// --- YouTube picker functions
+const openYouTubePicker = (slotNumber) => {
+  setYoutubePickerModal({ open: true, slot: slotNumber });
+};
+
+const closeYouTubePicker = () => {
+  setYoutubePickerModal({ open: false, slot: null });
+};
+
+const handleYouTubeSelected = (youtubeData) => {
+  console.log('[ObsSceneEditor] handleYouTubeSelected called with:', youtubeData);
+  
+  const slotNumber = youtubePickerModal.slot;
+  if (slotNumber) {
+    const defaultProperties = {
+      autoplay: false,
+      continue: false,
+      audio: false,
+      volume: 100,
+      fadeIn: false,
+      fadeOut: false
+    };
+    
+    const youtubeDataObject = {
+      youtube: youtubeData,
+      properties: defaultProperties
+    };
+    
+    console.log('[ObsSceneEditor] Creating YouTube data object:', youtubeDataObject);
+    
+    // Store the YouTube selection with default properties in local state for UI
+    setSelectedYouTubeBySlot(prev => ({
+      ...prev,
+      [slotNumber]: youtubeDataObject
+    }));
+    
+    // Find slot index for the hook's updateSlotMediaData function
+    const slotIndex = (slots || []).findIndex(s => s && s.slot === slotNumber);
+    
+    console.log('[ObsSceneEditor] Found slot index:', slotIndex, 'for slot number:', slotNumber);
+    
+    if (slotIndex !== -1) {
+      console.log('[ObsSceneEditor] Updating slot YouTube data for index:', slotIndex);
+      
+      // Use the hook's function to update and persist the slot YouTube data
+      updateSlotMediaData(slotIndex, youtubeDataObject);
+      
+      // Automatically set the genericType to YouTube when YouTube is selected
+      updateSlotGenericType(slotIndex, 'YouTube');
+    }
+  }
+  closeYouTubePicker();
+};
+
+const getSelectedYouTubeForSlot = (slotNumber) => {
+  return selectedYouTubeBySlot[slotNumber] || null;
+};
+
+const updateYouTubeProperty = (slotNumber, property, value) => {
+  // Update local state immediately
+  setSelectedYouTubeBySlot(prev => ({
+    ...prev,
+    [slotNumber]: {
+      ...prev[slotNumber],
+      properties: {
+        ...prev[slotNumber].properties,
+        [property]: value
+      }
+    }
+  }));
+  
+  // Find slot index and update through the hook
+  const slotIndex = (slots || []).findIndex(s => s && s.slot === slotNumber);
+  
+  if (slotIndex !== -1 && slots[slotIndex].mediaData) {
+    // Use the hook's function to update and persist the slot YouTube data
+    const updatedYouTubeData = {
+      ...slots[slotIndex].mediaData,
+      properties: {
+        ...slots[slotIndex].mediaData.properties,
+        [property]: value
+      }
+    };
+    
+    updateSlotMediaData(slotIndex, updatedYouTubeData);
+  }
+};
+
+// --- PDF/Image picker functions
+const openPdfImagePicker = (slotNumber) => {
+  setPdfImagePickerModal({ open: true, slot: slotNumber });
+};
+
+const closePdfImagePicker = () => {
+  setPdfImagePickerModal({ open: false, slot: null });
+};
+
+const handlePdfImageSelected = (media) => {
+  console.log('[ObsSceneEditor] handlePdfImageSelected called with media:', media);
+  
+  const slotNumber = pdfImagePickerModal.slot;
+  if (slotNumber) {
+    const defaultProperties = {
+      fitMode: 'fit', // fit, fill, stretch, center
+      opacity: 100,
+      rotation: 0, // 0, 90, 180, 270
+      offsetX: 0,
+      offsetY: 0,
+      zoom: 100,
+      page: 1 // For PDFs
+    };
+    
+    const pdfImageDataObject = {
+      pdfImage: media,
+      properties: defaultProperties
+    };
+    
+    console.log('[ObsSceneEditor] Creating PDF/Image data object:', pdfImageDataObject);
+    
+    // Store the PDF/Image selection with default properties in local state for UI
+    setSelectedPdfImageBySlot(prev => ({
+      ...prev,
+      [slotNumber]: pdfImageDataObject
+    }));
+    
+    // Find slot index for the hook's updateSlotMediaData function
+    const slotIndex = (slots || []).findIndex(s => s && s.slot === slotNumber);
+    
+    console.log('[ObsSceneEditor] Found slot index:', slotIndex, 'for slot number:', slotNumber);
+    
+    if (slotIndex !== -1) {
+      console.log('[ObsSceneEditor] Updating slot PDF/Image data for index:', slotIndex);
+      
+      // Use the hook's function to update and persist the slot PDF/Image data
+      updateSlotMediaData(slotIndex, pdfImageDataObject);
+      
+      // Automatically set the genericType to PDF/Image when PDF/Image is selected
+      updateSlotGenericType(slotIndex, 'PDF/Image');
+    }
+  }
+  closePdfImagePicker();
+};
+
+const getSelectedPdfImageForSlot = (slotNumber) => {
+  return selectedPdfImageBySlot[slotNumber] || null;
+};
+
+const updatePdfImageProperty = (slotNumber, property, value) => {
+  // Update local state immediately
+  setSelectedPdfImageBySlot(prev => ({
+    ...prev,
+    [slotNumber]: {
+      ...prev[slotNumber],
+      properties: {
+        ...prev[slotNumber].properties,
+        [property]: value
+      }
+    }
+  }));
+  
+  // Find slot index and update through the hook
+  const slotIndex = (slots || []).findIndex(s => s && s.slot === slotNumber);
+  
+  if (slotIndex !== -1 && slots[slotIndex].mediaData) {
+    // Use the hook's function to update and persist the slot PDF/Image data
+    const updatedPdfImageData = {
+      ...slots[slotIndex].mediaData,
+      properties: {
+        ...slots[slotIndex].mediaData.properties,
+        [property]: value
+      }
+    };
+    
+    updateSlotMediaData(slotIndex, updatedPdfImageData);
+  }
+};
+
 const closeGraphicsModal = () => setGfxModal({ open: false, slot: null });
 
 const pickGraphicForSlot = (slotNumber, row) => {
   console.log('Picking graphic for slot:', slotNumber, 'graphic:', row);
-  
+
   // Update the actual slot data instead of separate state
   const slotIndex = slots.findIndex(s => s.slot === slotNumber);
   console.log('Found slot index:', slotIndex);
-  
+
   if (slotIndex >= 0) {
     // Store the graphic ID in the slot's selectedSource field
     const graphicSource = `GRAPHIC:${row.id}`;
     console.log('Updating slot source to:', graphicSource);
     updateSlotSource(slotIndex, graphicSource);
+    
+    // Automatically set the genericType to Graphics when a graphic is selected
+    updateSlotGenericType(slotIndex, 'Graphics');
   }
-  
+
   // Keep the selectedGraphicBySlot for UI convenience but don't rely on it for persistence
   setSelectedGraphicBySlot(prev => ({ ...prev, [slotNumber]: row }));
-  
-  // Fetch thumbnail if not already available
-  if (row.id && !row.thumb && !thumbnailUrls[row.id]) {
-    fetchThumbnail(row.id);
-  }
-  
+
   closeGraphicsModal();
 };
 
@@ -972,23 +1340,6 @@ const getSelectedGraphicForSlot = (slotNumber) => {
   return null;
 };
 
-// Fetch thumbnail for a graphic (display-time fallback)
-const fetchThumbnail = async (graphicId) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/graphics/${graphicId}/thumbnail`);
-    if (response.ok) {
-      const data = await response.json();
-      if (data.url) {
-        setThumbnailUrls(prev => ({
-          ...prev,
-          [graphicId]: `${API_BASE_URL}${data.url}`
-        }));
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to fetch thumbnail for graphic:', graphicId, error);
-  }
-};
 
   const removeSourceFromScene = useCallback(async (sceneName, sourceName) => {
     if (!sceneName || !sourceName) return false;
@@ -1344,17 +1695,34 @@ const fetchThumbnail = async (graphicId) => {
                   const x = rawX * scaleX + 4; // small offset so it doesn't hug the corner
                   const y = rawY * scaleY + 4;
                   const slot = (slots || [])[idx] || {};
-                  const picked = selectedGraphicBySlot[slot.slot];
+                  const picked = getSelectedGraphicForSlot(slot.slot);
+                  const selectedMedia = getSelectedMediaForSlot(slot.slot);
+                  const selectedYouTube = getSelectedYouTubeForSlot(slot.slot);
+                  const selectedPdfImage = getSelectedPdfImageForSlot(slot.slot);
                   const uiType = genericTypesBySlot[slot.slot] ?? 'None';
                   let labelText;
-                  if (slot.selectedSource) {
-                    labelText = `#${idx + 1} — ${String(slot.selectedSource)}`;
-                  } else if (uiType === 'Graphics' && picked) {
-                    labelText = `#${idx + 1} — Graphics: ${picked.title || picked.id}`;
+                  if (uiType === 'Graphics' && picked) {
+                    labelText = `#${idx + 1}-Graphics-${picked.title || picked.id}`;
                   } else if (uiType === 'Graphics') {
-                    labelText = `#${idx + 1} — Graphics (unassigned)`;
+                    labelText = `#${idx + 1}-Graphics-(unassigned)`;
+                  } else if (uiType === 'Video' && selectedMedia) {
+                    const mediaName = selectedMedia.media.displayName || selectedMedia.media.name || selectedMedia.media.filename || 'Unknown';
+                    labelText = `#${idx + 1}-Video-${mediaName}`;
                   } else if (uiType === 'Video') {
-                    labelText = `#${idx + 1} — Video (unassigned)`;
+                    labelText = `#${idx + 1}-Video-(unassigned)`;
+                  } else if (uiType === 'YouTube' && selectedYouTube) {
+                    const youtubeTitle = selectedYouTube.youtube.title || `YouTube (${selectedYouTube.youtube.videoId})`;
+                    labelText = `#${idx + 1}-YouTube-${youtubeTitle}`;
+                  } else if (uiType === 'YouTube') {
+                    labelText = `#${idx + 1}-YouTube-(unassigned)`;
+                  } else if (uiType === 'PDF/Image' && selectedPdfImage) {
+                    const pdfImageName = selectedPdfImage.pdfImage.displayName || selectedPdfImage.pdfImage.name || selectedPdfImage.pdfImage.filename || 'Unknown';
+                    const fileType = selectedPdfImage.pdfImage.type === 'image' ? 'Image' : 'PDF';
+                    labelText = `#${idx + 1}-${fileType}-${pdfImageName}`;
+                  } else if (uiType === 'PDF/Image') {
+                    labelText = `#${idx + 1}-PDF/Image-(unassigned)`;
+                  } else if (slot.selectedSource) {
+                    labelText = `#${idx + 1} — ${String(slot.selectedSource)}`;
                   } else if (uiType === 'Existing Source') {
                     labelText = `#${idx + 1} — Existing Source (none)`;
                   } else {
@@ -1499,8 +1867,8 @@ const fetchThumbnail = async (graphicId) => {
                         <option value="Existing Source">Existing Source</option>
                         <option value="Graphics">Graphics</option>
                         <option value="Video">Video</option>
-                        <option value="YouTube" disabled>YouTube (coming soon)</option>
-                        <option value="PDF/Image" disabled>PDF/Image (coming soon)</option>
+                        <option value="YouTube">YouTube</option>
+                        <option value="PDF/Image">PDF/Image</option>
                         <option value="None">None</option>
                       </select>
                     </div>
@@ -1568,10 +1936,9 @@ const fetchThumbnail = async (graphicId) => {
                                   padding: 12
                                 }}>
                                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                                    {/* Thumbnail */}
                                     <div style={{
-                                      width: 64,
-                                      height: 36,
+                                      width: 128,
+                                      height: 72,
                                       background: '#e3f2fd',
                                       borderRadius: 4,
                                       overflow: 'hidden',
@@ -1582,38 +1949,12 @@ const fetchThumbnail = async (graphicId) => {
                                       flexShrink: 0
                                     }}>
                                       {(() => {
-                                        const graphic = selectedGraphic;
-                                        const thumbnailUrl = graphic.thumb || thumbnailUrls[graphic.id];
-                                        
-                                        if (thumbnailUrl) {
-                                          return (
-                                            <img 
-                                              src={thumbnailUrl} 
-                                              alt="thumbnail" 
-                                              style={{ 
-                                                maxWidth: '100%', 
-                                                maxHeight: '100%',
-                                                objectFit: 'cover'
-                                              }}
-                                              onError={() => {
-                                                // If thumbnail fails to load, try to generate it
-                                                if (!thumbnailUrls[graphic.id]) {
-                                                  fetchThumbnail(graphic.id);
-                                                }
-                                              }}
-                                            />
-                                          );
-                                        } else {
-                                          return (
-                                            <span style={{ 
-                                              fontSize: 10, 
-                                              color: '#1976d2',
-                                              fontWeight: 600
-                                            }}>
-                                              GFX
-                                            </span>
-                                          );
-                                        }
+                                        const url = buildGraphicsPreviewUrl(selectedGraphic);
+                                        return url ? (
+                                          <HoldToZoomModalPreview url={url} containerWidth={128} containerHeight={72} />
+                                        ) : (
+                                          <span style={{ fontSize: 10, color: '#1976d2', fontWeight: 600 }}>GFX</span>
+                                        );
                                       })()}
                                     </div>
 
@@ -1733,20 +2074,784 @@ const fetchThumbnail = async (graphicId) => {
                     )}
 
                     {(genericTypesBySlot[slot.slot] ?? 'None') === 'Video' && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <label style={{ fontSize: 14, color: '#222', fontWeight: 600 }}>Video Content</label>
-                        <div style={{ 
-                          fontSize: 12, 
-                          color: '#777', 
-                          fontStyle: 'italic', 
-                          padding: 12,
-                          background: '#f8f9fa',
-                          borderRadius: 4,
-                          border: '1px solid #e9ecef',
-                          textAlign: 'center'
-                        }}>
-                          Media picker (modal) coming soon
-                        </div>
+                        
+                        {(() => {
+                          const selectedMedia = getSelectedMediaForSlot(slot.slot);
+                          return (
+                            <>
+                              {selectedMedia ? (
+                                // Selected Media Display
+                                <div style={{
+                                  background: '#f8fbff',
+                                  border: '1px solid #b1c7e7',
+                                  borderRadius: 8,
+                                  padding: 12
+                                }}>
+                                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                                    <div style={{
+                                      width: 80,
+                                      height: 45,
+                                      background: '#e3f2fd',
+                                      borderRadius: 4,
+                                      overflow: 'hidden',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      border: '1px solid #b1c7e7',
+                                      flexShrink: 0
+                                    }}>
+                                      {selectedMedia.media.type === 'video' ? (
+                                        <video
+                                          src={`${API_BASE_URL}/media/${selectedMedia.media.filename}`}
+                                          style={{
+                                            width: '100%',
+                                            height: '100%',
+                                            objectFit: 'cover'
+                                          }}
+                                          muted
+                                        />
+                                      ) : selectedMedia.media.type === 'image' && selectedMedia.media.thumb ? (
+                                        <img
+                                          src={`${API_BASE_URL}/media/thumbs/${selectedMedia.media.thumb}`}
+                                          alt={selectedMedia.media.displayName}
+                                          style={{
+                                            width: '100%',
+                                            height: '100%',
+                                            objectFit: 'cover'
+                                          }}
+                                        />
+                                      ) : (
+                                        <span style={{ fontSize: 10, color: '#1976d2', fontWeight: 600 }}>
+                                          {selectedMedia.media.type?.toUpperCase() || 'MEDIA'}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Content */}
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ 
+                                        fontSize: 14, 
+                                        fontWeight: 600, 
+                                        color: '#1976d2',
+                                        marginBottom: 4
+                                      }}>
+                                        {selectedMedia.media.displayName || selectedMedia.media.name || selectedMedia.media.filename}
+                                      </div>
+                                      <div style={{ 
+                                        fontSize: 12, 
+                                        color: '#666',
+                                        marginBottom: 6
+                                      }}>
+                                        {selectedMedia.media.type} 
+                                        {selectedMedia.media.duration && ` • ${Math.floor(selectedMedia.media.duration / 60)}:${(selectedMedia.media.duration % 60).toString().padStart(2, '0')}`}
+                                      </div>
+                                      
+                                      {/* Properties Summary */}
+                                      <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
+                                        {Object.entries(selectedMedia.properties).filter(([key, value]) => {
+                                          if (key === 'volume') return selectedMedia.properties.audio && value !== 100;
+                                          return value === true;
+                                        }).map(([key, value]) => {
+                                          if (key === 'volume') return `Volume: ${value}%`;
+                                          return key.charAt(0).toUpperCase() + key.slice(1);
+                                        }).join(' • ') || 'Default settings'}
+                                      </div>
+                                      
+                                      {/* Properties Controls */}
+                                      <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr 1fr',
+                                        gap: 8,
+                                        fontSize: 12
+                                      }}>
+                                        {/* Playback Controls */}
+                                        <div>
+                                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', marginBottom: 4 }}>
+                                            <input
+                                              type="checkbox"
+                                              checked={selectedMedia.properties.loop}
+                                              onChange={(e) => updateMediaProperty(slot.slot, 'loop', e.target.checked)}
+                                              style={{ margin: 0 }}
+                                            />
+                                            <span>Loop</span>
+                                          </label>
+                                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                                            <input
+                                              type="checkbox"
+                                              checked={selectedMedia.properties.continue}
+                                              onChange={(e) => updateMediaProperty(slot.slot, 'continue', e.target.checked)}
+                                              style={{ margin: 0 }}
+                                            />
+                                            <span>Continue</span>
+                                          </label>
+                                        </div>
+                                        
+                                        {/* Audio Controls */}
+                                        <div>
+                                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', marginBottom: 4 }}>
+                                            <input
+                                              type="checkbox"
+                                              checked={selectedMedia.properties.audio}
+                                              onChange={(e) => updateMediaProperty(slot.slot, 'audio', e.target.checked)}
+                                              style={{ margin: 0 }}
+                                            />
+                                            <span>Audio</span>
+                                          </label>
+                                          {selectedMedia.properties.audio && (
+                                            <div style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <span style={{ minWidth: 30 }}>{selectedMedia.properties.volume}%</span>
+                                                <input
+                                                  type="range"
+                                                  min="0"
+                                                  max="100"
+                                                  value={selectedMedia.properties.volume}
+                                                  onChange={(e) => updateMediaProperty(slot.slot, 'volume', parseInt(e.target.value))}
+                                                  style={{ flex: 1, height: 16 }}
+                                                />
+                                              </div>
+                                              <div style={{ display: 'flex', gap: 8 }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={selectedMedia.properties.fadeIn}
+                                                    onChange={(e) => updateMediaProperty(slot.slot, 'fadeIn', e.target.checked)}
+                                                    style={{ margin: 0, width: 12, height: 12 }}
+                                                  />
+                                                  <span>Fade In</span>
+                                                </label>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={selectedMedia.properties.fadeOut}
+                                                    onChange={(e) => updateMediaProperty(slot.slot, 'fadeOut', e.target.checked)}
+                                                    style={{ margin: 0, width: 12, height: 12 }}
+                                                  />
+                                                  <span>Fade Out</span>
+                                                </label>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Clear Button */}
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          // Clear local state
+                                          setSelectedMediaBySlot(prev => {
+                                            const updated = { ...prev };
+                                            delete updated[slot.slot];
+                                            return updated;
+                                          });
+                                          
+                                          // Find slot index and clear media data through the hook
+                                          const slotIndex = (slots || []).findIndex(s => s && s.slot === slot.slot);
+                                          
+                                          if (slotIndex !== -1) {
+                                            // Use the hook's function to clear media data
+                                            updateSlotMediaData(slotIndex, undefined);
+                                          }
+                                        }}
+                                        style={{
+                                          background: "#fff2e0",
+                                          border: "1px solid #ff9800",
+                                          color: "#e65100",
+                                          borderRadius: 6,
+                                          padding: "6px 12px",
+                                          fontSize: 12,
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                          flexShrink: 0
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                // No Media Selected State
+                                <div style={{
+                                  background: '#f8f9fa',
+                                  border: '1px dashed #ddd',
+                                  borderRadius: 8,
+                                  padding: 16,
+                                  textAlign: 'center',
+                                  color: '#777',
+                                  fontStyle: 'italic'
+                                }}>
+                                  No media selected
+                                </div>
+                              )}
+
+                              <button 
+                                type="button" 
+                                onClick={() => openMediaPicker(slot.slot)}
+                                style={{
+                                  background: "#e3f2fd",
+                                  border: "1px solid #b1c7e7",
+                                  color: "#1976d2",
+                                  borderRadius: 8,
+                                  padding: "10px 16px",
+                                  fontSize: 14,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  alignSelf: 'flex-start'
+                                }}
+                              >
+                                {selectedMedia ? 'Change Media' : 'Select Media'}
+                              </button>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {(genericTypesBySlot[slot.slot] ?? 'None') === 'YouTube' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <label style={{ fontSize: 14, color: '#222', fontWeight: 600 }}>YouTube Content</label>
+                        
+                        {(() => {
+                          const selectedYouTube = getSelectedYouTubeForSlot(slot.slot);
+                          return (
+                            <>
+                              {selectedYouTube ? (
+                                // Selected YouTube Display
+                                <div style={{
+                                  background: '#f8fbff',
+                                  border: '1px solid #b1c7e7',
+                                  borderRadius: 8,
+                                  padding: 12
+                                }}>
+                                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                                    <div style={{
+                                      width: 80,
+                                      height: 45,
+                                      background: '#ff0000',
+                                      borderRadius: 4,
+                                      overflow: 'hidden',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      border: '1px solid #b1c7e7',
+                                      flexShrink: 0,
+                                      backgroundImage: `url(${selectedYouTube.youtube.thumbnail})`,
+                                      backgroundSize: 'cover',
+                                      backgroundPosition: 'center',
+                                      position: 'relative'
+                                    }}>
+                                      {/* YouTube Play Icon Overlay */}
+                                      <div style={{
+                                        position: 'absolute',
+                                        top: '50%',
+                                        left: '50%',
+                                        transform: 'translate(-50%, -50%)',
+                                        color: 'white',
+                                        fontSize: 16,
+                                        fontWeight: 'bold'
+                                      }}>
+                                        ▶
+                                      </div>
+                                    </div>
+                                    
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ 
+                                        fontWeight: 600, 
+                                        fontSize: 13, 
+                                        color: '#333',
+                                        wordBreak: 'break-word'
+                                      }}>
+                                        {selectedYouTube.youtube.title}
+                                      </div>
+                                      <div style={{ 
+                                        fontSize: 11, 
+                                        color: '#666',
+                                        marginTop: 2
+                                      }}>
+                                        YouTube Video ID: {selectedYouTube.youtube.videoId}
+                                      </div>
+                                    </div>
+                                    
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => openYouTubePicker(slot.slot)}
+                                        style={{
+                                          background: "#e3f2fd",
+                                          border: "1px solid #b1c7e7",
+                                          color: "#1976d2",
+                                          borderRadius: 6,
+                                          padding: "6px 12px",
+                                          fontSize: 12,
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                          flexShrink: 0
+                                        }}
+                                      >
+                                        Change
+                                      </button>
+                                      
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          // Clear local state
+                                          setSelectedYouTubeBySlot(prev => {
+                                            const updated = { ...prev };
+                                            delete updated[slot.slot];
+                                            return updated;
+                                          });
+                                          
+                                          // Find slot index and clear YouTube data through the hook
+                                          const slotIndex = (slots || []).findIndex(s => s && s.slot === slot.slot);
+                                          
+                                          if (slotIndex !== -1) {
+                                            // Use the hook's function to clear YouTube data
+                                            updateSlotMediaData(slotIndex, undefined);
+                                          }
+                                        }}
+                                        style={{
+                                          background: "#fff2e0",
+                                          border: "1px solid #ff9800",
+                                          color: "#e65100",
+                                          borderRadius: 6,
+                                          padding: "6px 12px",
+                                          fontSize: 12,
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                          flexShrink: 0
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* YouTube Properties */}
+                                  <div style={{ 
+                                    marginTop: 12, 
+                                    paddingTop: 12, 
+                                    borderTop: '1px solid #e1e6ec',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 8
+                                  }}>
+                                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedYouTube.properties?.autoplay || false}
+                                          onChange={(e) => updateYouTubeProperty(slot.slot, 'autoplay', e.target.checked)}
+                                        />
+                                        Auto-play
+                                      </label>
+                                      
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedYouTube.properties?.continue || false}
+                                          onChange={(e) => updateYouTubeProperty(slot.slot, 'continue', e.target.checked)}
+                                        />
+                                        Continue
+                                      </label>
+                                    </div>
+                                    
+                                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedYouTube.properties?.audio || false}
+                                          onChange={(e) => updateYouTubeProperty(slot.slot, 'audio', e.target.checked)}
+                                        />
+                                        Audio
+                                      </label>
+                                      
+                                      {selectedYouTube.properties?.audio && (
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                          <label style={{ fontSize: 12, color: '#666' }}>Volume:</label>
+                                          <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={selectedYouTube.properties?.volume || 100}
+                                            onChange={(e) => updateYouTubeProperty(slot.slot, 'volume', parseInt(e.target.value))}
+                                            style={{ width: 80 }}
+                                          />
+                                          <span style={{ fontSize: 12, color: '#666', minWidth: 30 }}>
+                                            {selectedYouTube.properties?.volume || 100}%
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    {selectedYouTube.properties?.audio && (
+                                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedYouTube.properties?.fadeIn || false}
+                                            onChange={(e) => updateYouTubeProperty(slot.slot, 'fadeIn', e.target.checked)}
+                                          />
+                                          Fade In
+                                        </label>
+                                        
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedYouTube.properties?.fadeOut || false}
+                                            onChange={(e) => updateYouTubeProperty(slot.slot, 'fadeOut', e.target.checked)}
+                                          />
+                                          Fade Out
+                                        </label>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                // No YouTube Selected State
+                                <div style={{
+                                  background: '#f8f9fa',
+                                  border: '1px dashed #ddd',
+                                  borderRadius: 8,
+                                  padding: 16,
+                                  textAlign: 'center',
+                                  color: '#777',
+                                  fontStyle: 'italic'
+                                }}>
+                                  No YouTube video selected
+                                </div>
+                              )}
+
+                              <button 
+                                type="button" 
+                                onClick={() => openYouTubePicker(slot.slot)}
+                                style={{
+                                  background: "#e3f2fd",
+                                  border: "1px solid #b1c7e7",
+                                  color: "#1976d2",
+                                  borderRadius: 8,
+                                  padding: "10px 16px",
+                                  fontSize: 14,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  alignSelf: 'flex-start'
+                                }}
+                              >
+                                {selectedYouTube ? 'Change YouTube Video' : 'Select YouTube Video'}
+                              </button>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {(genericTypesBySlot[slot.slot] ?? 'None') === 'PDF/Image' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <label style={{ fontSize: 14, color: '#222', fontWeight: 600 }}>PDF/Image Content</label>
+                        
+                        {(() => {
+                          const selectedPdfImage = getSelectedPdfImageForSlot(slot.slot);
+                          return (
+                            <>
+                              {selectedPdfImage ? (
+                                // Selected PDF/Image Display
+                                <div style={{
+                                  background: '#f8fbff',
+                                  border: '1px solid #b1c7e7',
+                                  borderRadius: 8,
+                                  padding: 12
+                                }}>
+                                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                                    <div style={{
+                                      width: 80,
+                                      height: 60,
+                                      background: '#e3f2fd',
+                                      borderRadius: 4,
+                                      overflow: 'hidden',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      border: '1px solid #b1c7e7',
+                                      flexShrink: 0
+                                    }}>
+                                      {selectedPdfImage.pdfImage.type === 'image' && selectedPdfImage.pdfImage.thumb ? (
+                                        <img
+                                          src={`${API_BASE_URL}/media/thumbs/${selectedPdfImage.pdfImage.thumb}`}
+                                          alt={selectedPdfImage.pdfImage.displayName}
+                                          style={{
+                                            width: '100%',
+                                            height: '100%',
+                                            objectFit: 'cover'
+                                          }}
+                                        />
+                                      ) : (
+                                        <div style={{
+                                          fontSize: 24,
+                                          color: '#1976d2'
+                                        }}>
+                                          {selectedPdfImage.pdfImage.type === 'image' ? '🖼️' : '📄'}
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ 
+                                        fontWeight: 600, 
+                                        fontSize: 13, 
+                                        color: '#333',
+                                        wordBreak: 'break-word'
+                                      }}>
+                                        {selectedPdfImage.pdfImage.displayName || selectedPdfImage.pdfImage.name || selectedPdfImage.pdfImage.filename}
+                                      </div>
+                                      <div style={{ 
+                                        fontSize: 11, 
+                                        color: '#666',
+                                        marginTop: 2
+                                      }}>
+                                        {selectedPdfImage.pdfImage.type === 'image' ? 'Image' : 'PDF'} • 
+                                        Fit: {selectedPdfImage.properties?.fitMode || 'fit'}
+                                      </div>
+                                    </div>
+                                    
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => openPdfImagePicker(slot.slot)}
+                                        style={{
+                                          background: "#e3f2fd",
+                                          border: "1px solid #b1c7e7",
+                                          color: "#1976d2",
+                                          borderRadius: 6,
+                                          padding: "6px 12px",
+                                          fontSize: 12,
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                          flexShrink: 0
+                                        }}
+                                      >
+                                        Change
+                                      </button>
+                                      
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          // Clear local state
+                                          setSelectedPdfImageBySlot(prev => {
+                                            const updated = { ...prev };
+                                            delete updated[slot.slot];
+                                            return updated;
+                                          });
+                                          
+                                          // Find slot index and clear PDF/Image data through the hook
+                                          const slotIndex = (slots || []).findIndex(s => s && s.slot === slot.slot);
+                                          
+                                          if (slotIndex !== -1) {
+                                            // Use the hook's function to clear PDF/Image data
+                                            updateSlotMediaData(slotIndex, undefined);
+                                          }
+                                        }}
+                                        style={{
+                                          background: "#fff2e0",
+                                          border: "1px solid #ff9800",
+                                          color: "#e65100",
+                                          borderRadius: 6,
+                                          padding: "6px 12px",
+                                          fontSize: 12,
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                          flexShrink: 0
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* PDF/Image Properties */}
+                                  <div style={{ 
+                                    marginTop: 12, 
+                                    paddingTop: 12, 
+                                    borderTop: '1px solid #e1e6ec',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 12
+                                  }}>
+                                    {/* Fit Mode */}
+                                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                                      <label style={{ fontSize: 12, color: '#666', minWidth: 60 }}>Fit Mode:</label>
+                                      <select
+                                        value={selectedPdfImage.properties?.fitMode || 'fit'}
+                                        onChange={(e) => updatePdfImageProperty(slot.slot, 'fitMode', e.target.value)}
+                                        style={{
+                                          padding: '4px 8px',
+                                          borderRadius: 4,
+                                          border: '1px solid #b1c7e7',
+                                          fontSize: 12
+                                        }}
+                                      >
+                                        <option value="fit">Fit (maintain aspect)</option>
+                                        <option value="fill">Fill (may crop)</option>
+                                        <option value="stretch">Stretch (may distort)</option>
+                                        <option value="center">Center (original size)</option>
+                                      </select>
+                                    </div>
+
+                                    {/* Opacity and Rotation */}
+                                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        <label style={{ fontSize: 12, color: '#666' }}>Opacity:</label>
+                                        <input
+                                          type="range"
+                                          min="0"
+                                          max="100"
+                                          value={selectedPdfImage.properties?.opacity || 100}
+                                          onChange={(e) => updatePdfImageProperty(slot.slot, 'opacity', parseInt(e.target.value))}
+                                          style={{ width: 80 }}
+                                        />
+                                        <span style={{ fontSize: 12, color: '#666', minWidth: 35 }}>
+                                          {selectedPdfImage.properties?.opacity || 100}%
+                                        </span>
+                                      </div>
+                                      
+                                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        <label style={{ fontSize: 12, color: '#666' }}>Rotation:</label>
+                                        <select
+                                          value={selectedPdfImage.properties?.rotation || 0}
+                                          onChange={(e) => updatePdfImageProperty(slot.slot, 'rotation', parseInt(e.target.value))}
+                                          style={{
+                                            padding: '4px 8px',
+                                            borderRadius: 4,
+                                            border: '1px solid #b1c7e7',
+                                            fontSize: 12
+                                          }}
+                                        >
+                                          <option value={0}>0°</option>
+                                          <option value={90}>90°</option>
+                                          <option value={180}>180°</option>
+                                          <option value={270}>270°</option>
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    {/* Zoom and Position */}
+                                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        <label style={{ fontSize: 12, color: '#666' }}>Zoom:</label>
+                                        <input
+                                          type="range"
+                                          min="25"
+                                          max="200"
+                                          value={selectedPdfImage.properties?.zoom || 100}
+                                          onChange={(e) => updatePdfImageProperty(slot.slot, 'zoom', parseInt(e.target.value))}
+                                          style={{ width: 80 }}
+                                        />
+                                        <span style={{ fontSize: 12, color: '#666', minWidth: 35 }}>
+                                          {selectedPdfImage.properties?.zoom || 100}%
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {/* Position Offset */}
+                                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        <label style={{ fontSize: 12, color: '#666' }}>Offset X:</label>
+                                        <input
+                                          type="number"
+                                          min="-500"
+                                          max="500"
+                                          value={selectedPdfImage.properties?.offsetX || 0}
+                                          onChange={(e) => updatePdfImageProperty(slot.slot, 'offsetX', parseInt(e.target.value))}
+                                          style={{
+                                            width: 60,
+                                            padding: '4px 6px',
+                                            borderRadius: 4,
+                                            border: '1px solid #b1c7e7',
+                                            fontSize: 12
+                                          }}
+                                        />
+                                      </div>
+                                      
+                                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        <label style={{ fontSize: 12, color: '#666' }}>Offset Y:</label>
+                                        <input
+                                          type="number"
+                                          min="-500"
+                                          max="500"
+                                          value={selectedPdfImage.properties?.offsetY || 0}
+                                          onChange={(e) => updatePdfImageProperty(slot.slot, 'offsetY', parseInt(e.target.value))}
+                                          style={{
+                                            width: 60,
+                                            padding: '4px 6px',
+                                            borderRadius: 4,
+                                            border: '1px solid #b1c7e7',
+                                            fontSize: 12
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {/* PDF Page Selection */}
+                                    {selectedPdfImage.pdfImage.type !== 'image' && (
+                                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        <label style={{ fontSize: 12, color: '#666' }}>PDF Page:</label>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          max="999"
+                                          value={selectedPdfImage.properties?.page || 1}
+                                          onChange={(e) => updatePdfImageProperty(slot.slot, 'page', parseInt(e.target.value))}
+                                          style={{
+                                            width: 60,
+                                            padding: '4px 6px',
+                                            borderRadius: 4,
+                                            border: '1px solid #b1c7e7',
+                                            fontSize: 12
+                                          }}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                // No PDF/Image Selected State
+                                <div style={{
+                                  background: '#f8f9fa',
+                                  border: '1px dashed #ddd',
+                                  borderRadius: 8,
+                                  padding: 16,
+                                  textAlign: 'center',
+                                  color: '#777',
+                                  fontStyle: 'italic'
+                                }}>
+                                  No PDF or image selected
+                                </div>
+                              )}
+
+                              <button 
+                                type="button" 
+                                onClick={() => openPdfImagePicker(slot.slot)}
+                                style={{
+                                  background: "#e3f2fd",
+                                  border: "1px solid #b1c7e7",
+                                  color: "#1976d2",
+                                  borderRadius: 8,
+                                  padding: "10px 16px",
+                                  fontSize: 14,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  alignSelf: 'flex-start'
+                                }}
+                              >
+                                {selectedPdfImage ? 'Change PDF/Image' : 'Select PDF/Image'}
+                              </button>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -1809,68 +2914,79 @@ const fetchThumbnail = async (graphicId) => {
             {!gfxLoading && gfxList.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
                 {gfxList.map(row => (
-                  <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr auto', gap: 12, alignItems: 'center', border: '1px solid #e1e6ec', padding: 12, borderRadius: 8, background: '#fff' }}>
-                    <div style={{ width: 72, height: 40, background: '#f3f3f3', borderRadius: 4, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div
+                    key={row.id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '120px 1fr auto',
+                      columnGap: 12,
+                      rowGap: 8,
+                      alignItems: 'start',
+                      border: '1px solid #e1e6ec',
+                      padding: 12,
+                      borderRadius: 8,
+                      background: '#fff'
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 120,
+                        height: 68,
+                        background: '#f3f3f3',
+                        borderRadius: 4,
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1px solid #b1c7e7',
+                        boxSizing: 'border-box'
+                      }}
+                    >
                       {(() => {
-                        const thumbnailUrl = row.thumb || thumbnailUrls[row.id];
-                        if (thumbnailUrl) {
-                          return (
-                            <img 
-                              src={thumbnailUrl} 
-                              alt="thumb" 
-                              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'cover' }}
-                              onError={() => {
-                                if (!thumbnailUrls[row.id]) {
-                                  fetchThumbnail(row.id);
-                                }
-                              }}
-                            />
-                          );
-                        } else {
-                          // Try to fetch thumbnail if not available
-                          if (!thumbnailUrls[row.id]) {
-                            fetchThumbnail(row.id);
-                          }
-                          return <span style={{ fontSize: 11, color: '#999' }}>loading...</span>;
-                        }
+                        const url = buildGraphicsPreviewUrl(row);
+                        return url ? (
+                          <HoldToZoomModalPreview url={url} containerWidth={120} containerHeight={68} />
+                        ) : (
+                          <span style={{ fontSize: 11, color: '#999' }}>no preview</span>
+                        );
                       })()}
                     </div>
-                    <div>
+                    <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <div style={{ fontWeight: 600, color: '#222' }}>{row.title}</div>
                       <div style={{ fontSize: 12, color: '#777' }}>{row.type}{row.summary ? ` — ${row.summary}` : ''}</div>
                     </div>
-                   <div style={{ display:'flex', gap:8 }}>
-                    <button 
-                      onClick={() => pickGraphicForSlot(gfxModal.slot, row)}
-                      style={{
-                        background: "#e3f2fd",
-                        border: "1px solid #b1c7e7",
-                        color: "#1976d2",
-                        borderRadius: 8,
-                        padding: "6px 12px",
-                        fontSize: 14,
-                        fontWeight: 600,
-                        cursor: "pointer"
-                      }}
-                    >
-                      Use
-                    </button>
-                    <button 
-                      onClick={() => openGraphicEditor(row, gfxModal.slot)}
-                      style={{
-                        background: "#f3e5f5",
-                        border: "1px solid #9c27b0",
-                        color: "#6a1b99",
-                        borderRadius: 6,
-                        padding: "4px 10px",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer"
-                      }}
-                    >
-                      Edit
-                    </button>
-                  </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => pickGraphicForSlot(gfxModal.slot, row)}
+                        style={{
+                          background: "#e3f2fd",
+                          border: "1px solid #b1c7e7",
+                          color: "#1976d2",
+                          borderRadius: 8,
+                          padding: "6px 12px",
+                          fontSize: 14,
+                          fontWeight: 600,
+                          cursor: "pointer"
+                        }}
+                      >
+                        Use
+                      </button>
+                      <button
+                        onClick={() => openGraphicEditor(row, gfxModal.slot)}
+                        style={{
+                          background: "#f3e5f5",
+                          border: "1px solid #9c27b0",
+                          color: "#6a1b99",
+                          borderRadius: 6,
+                          padding: "4px 10px",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: "pointer"
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1919,6 +3035,41 @@ const fetchThumbnail = async (graphicId) => {
           </div>
         </div>
       )}
+
+      {/* Media Picker Modal */}
+      <MediaPicker
+        showId={(() => {
+          const showId = getShowIdFromAnywhere(item);
+          console.log('ObsSceneEditor: Passing showId to MediaPicker:', showId, 'from item:', item);
+          return showId;
+        })()}
+        isOpen={mediaPickerModal.open}
+        onClose={closeMediaPicker}
+        onMediaSelected={handleMediaSelected}
+        title={`Select Media for Slot ${mediaPickerModal.slot}`}
+      />
+
+      {/* YouTube Picker Modal */}
+      <YouTubePicker
+        isOpen={youtubePickerModal.open}
+        onClose={closeYouTubePicker}
+        onYouTubeSelected={handleYouTubeSelected}
+        title={`Add YouTube Video for Slot ${youtubePickerModal.slot}`}
+      />
+
+      {/* PDF/Image Picker Modal */}
+      <MediaPicker
+        showId={(() => {
+          const showId = getShowIdFromAnywhere(item);
+          console.log('ObsSceneEditor: Passing showId to PDF/Image MediaPicker:', showId, 'from item:', item);
+          return showId;
+        })()}
+        isOpen={pdfImagePickerModal.open}
+        onClose={closePdfImagePicker}
+        onMediaSelected={handlePdfImageSelected}
+        title={`Select Image/PDF for Slot ${pdfImagePickerModal.slot}`}
+        typeFilter={['image', 'application']} // Filter to images and PDFs
+      />
 
     </div>
   );

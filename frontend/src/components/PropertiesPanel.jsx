@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { API_BASE_URL } from "../config";
 import ObsSceneEditor from "./properties/ObsSceneEditor";
+import FullScreenGraphic from "./FullScreenGraphic";
+import FullScreenVideo from "./FullScreenVideo";
+import FullScreenYouTube from "./FullScreenYouTube";
+import FullScreenPdfImage from "./FullScreenPdfImage";
 
 export default function PropertiesPanel({
   segments,
@@ -77,6 +81,13 @@ const isObsScene =
   cmd === "SetCurrentProgramScene" ||
   hasSceneData;
 
+// Check for FullScreen component types
+const isFullScreenGraphic = t === "fullscreengraphic";
+const isFullScreenVideo = t === "fullscreenvideo"; 
+const isFullScreenYouTube = t === "fullscreenyoutube";
+const isFullScreenPdfImage = t === "fullscreenpdfimage";
+
+
   // Merge a partial item patch into the currently selected item
   function applyLocalPatch(prevItem, patch) {
     if (!prevItem || !patch) return prevItem;
@@ -92,18 +103,52 @@ const isObsScene =
   }
 
   return (
-    <div style={{ flex: 1, overflow: "auto", background: "#f8fafd", height: "100%" }}>
-      <div style={{ padding: "15px", borderBottom: "1px solid #e1e6ec" }}>
+    <div style={{ flex: 1, background: "#f8fafd", height: "100%", display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "15px", borderBottom: "1px solid #e1e6ec", flexShrink: 0 }}>
         <h2 style={{ margin: 0, fontSize: 18 }}>Properties</h2>
       </div>
 
-      <div style={{ height: "calc(100% - 50px)", overflow: "auto", padding: 12 }}>
+      <div style={{ flex: 1, overflow: "auto" }}>
         {isObsScene ? (
-          <ObsSceneEditor
-            key={`obs-${String(selectedItem.id)}`}
+          <div style={{ padding: 12 }}>
+            <ObsSceneEditor
+              key={`obs-${String(selectedItem.id)}`}
+              item={selectedItem}
+              itemId={selectedItem.id}
+              onPatch={async (partial) => {
+                // 1) Persist to backend
+                const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(partial),
+                });
+                if (!res.ok) {
+                  const t = await res.text().catch(() => "");
+                  throw new Error(t || `Failed to save item ${selectedItem.id}`);
+                }
+
+                // 2) Optimistically merge into local PropertiesPanel state
+                setSelectedItem((prev) => applyLocalPatch(prev, partial));
+
+                // 3) Notify the app so the parent can sync its segments state (no prop changes required)
+                try {
+                  window.dispatchEvent(
+                    new CustomEvent("rundown:item-patched", {
+                      detail: { itemId: selectedItem.id, patch: partial },
+                    })
+                  );
+                } catch (_) {
+                  // no-op if CustomEvent is unavailable
+                }
+              }}
+            />
+          </div>
+        ) : isFullScreenGraphic ? (
+          <FullScreenGraphic
+            key={`graphic-${String(selectedItem.id)}`}
             item={selectedItem}
-            itemId={selectedItem.id}
-            onPatch={async (partial) => {
+            onSave={async (data) => {
+              const partial = { data };
               // 1) Persist to backend
               const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
                 method: "PATCH",
@@ -118,21 +163,109 @@ const isObsScene =
               // 2) Optimistically merge into local PropertiesPanel state
               setSelectedItem((prev) => applyLocalPatch(prev, partial));
 
-              // 3) Notify the app so the parent can sync its segments state (no prop changes required)
+              // 3) Notify the app
               try {
                 window.dispatchEvent(
                   new CustomEvent("rundown:item-patched", {
                     detail: { itemId: selectedItem.id, patch: partial },
                   })
                 );
-              } catch (_) {
-                // no-op if CustomEvent is unavailable
+              } catch (_) {}
+            }}
+          />
+        ) : isFullScreenVideo ? (
+          <FullScreenVideo
+            key={`video-${String(selectedItem.id)}`}
+            item={selectedItem}
+            onSave={async (data) => {
+              const partial = { data };
+              // 1) Persist to backend
+              const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(partial),
+              });
+              if (!res.ok) {
+                const t = await res.text().catch(() => "");
+                throw new Error(t || `Failed to save item ${selectedItem.id}`);
               }
+
+              // 2) Optimistically merge into local PropertiesPanel state
+              setSelectedItem((prev) => applyLocalPatch(prev, partial));
+
+              // 3) Notify the app
+              try {
+                window.dispatchEvent(
+                  new CustomEvent("rundown:item-patched", {
+                    detail: { itemId: selectedItem.id, patch: partial },
+                  })
+                );
+              } catch (_) {}
+            }}
+          />
+        ) : isFullScreenYouTube ? (
+          <FullScreenYouTube
+            key={`youtube-${String(selectedItem.id)}`}
+            item={selectedItem}
+            onSave={async (data) => {
+              const partial = { data };
+              // 1) Persist to backend
+              const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(partial),
+              });
+              if (!res.ok) {
+                const t = await res.text().catch(() => "");
+                throw new Error(t || `Failed to save item ${selectedItem.id}`);
+              }
+
+              // 2) Optimistically merge into local PropertiesPanel state
+              setSelectedItem((prev) => applyLocalPatch(prev, partial));
+
+              // 3) Notify the app
+              try {
+                window.dispatchEvent(
+                  new CustomEvent("rundown:item-patched", {
+                    detail: { itemId: selectedItem.id, patch: partial },
+                  })
+                );
+              } catch (_) {}
+            }}
+          />
+        ) : isFullScreenPdfImage ? (
+          <FullScreenPdfImage
+            key={`pdfimage-${String(selectedItem.id)}`}
+            item={selectedItem}
+            onSave={async (data) => {
+              const partial = { data };
+              // 1) Persist to backend
+              const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(partial),
+              });
+              if (!res.ok) {
+                const t = await res.text().catch(() => "");
+                throw new Error(t || `Failed to save item ${selectedItem.id}`);
+              }
+
+              // 2) Optimistically merge into local PropertiesPanel state
+              setSelectedItem((prev) => applyLocalPatch(prev, partial));
+
+              // 3) Notify the app
+              try {
+                window.dispatchEvent(
+                  new CustomEvent("rundown:item-patched", {
+                    detail: { itemId: selectedItem.id, patch: partial },
+                  })
+                );
+              } catch (_) {}
             }}
           />
         ) : (
           <div style={{ padding: 12, color: "#666" }}>
-            This item type isn’t supported in the new properties panel yet.
+            This item type isn't supported in the new properties panel yet.
             <div style={{ marginTop: 6, fontSize: 12, color: "#999" }}>
               Item type: <code>{String(rawType || "(unknown)")}</code>
             </div>

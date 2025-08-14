@@ -95,6 +95,8 @@ function Collapse({ open, children }) {
 
 export default function RundownView({ showId, showName: showNameProp, selectedTab, onBackToShows }) {
   const TOPBAR_H = 48;
+  // State to force re-render after drag operations
+  
   // Panel sizes
   const { leftW, rightW, startDrag, setLeftW, setRightW } = usePanelResize(220, 300);
 
@@ -166,7 +168,11 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
   const loading = epLoading || segLoading;
 
   // DnD
+  // Track active drag to avoid syncing server data mid‑drag
+  const [isDragging, setIsDragging] = useState(false);
   const [segmentsState, setSegmentsState] = useState([]);
+  // Track last successful drop time to debounce server reconciliation
+const lastDropAtRef = useRef(0);
   // Persist expanded state independently of server payload to avoid races on refresh
   const segExpandedRef = useRef(new Map());         // Map<segmentId, boolean>
   const cueExpandedRef = useRef(new Map());         // Map<groupId, boolean>
@@ -178,6 +184,10 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
   const beginEditItem = (segId, groupId, it) => setEditing({ type: "item", segId, groupId, itemId: it.id, value: it.title || it.data?.title || "Untitled Item" });
   const cancelEdit = () => setEditing({ type: null, segId: null, groupId: null, itemId: null, value: "" });
   React.useEffect(() => {
+    // Do not reconcile from server while a drag is active; this causes items to be added/removed mid‑drag
+    if (isDragging) return;
+      // Avoid racing a just-finished drop; give optimistic state a moment to settle
+  if (Date.now() - (lastDropAtRef.current || 0) < 300) return;
     setSegmentsState(prev => {
       const prevById = new Map(prev.map(s => [s.id, s]));
       const normalizeCueTitle = (g) => {
@@ -224,7 +234,7 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
         };
       });
     });
-  }, [segments]);
+  }, [segments, isDragging]);
   // --- Optimistic expand/collapse helpers ---
   function onToggleSegment(segId) {
     setSegmentsState(prev => prev.map(s => {
@@ -251,7 +261,22 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
     }));
     toggleGroup(segId, groupId);
   }
-  const { handleDragEnd, handleDragStart } = useRundownDnD({ api, segments: segmentsState, setSegments: setSegmentsState, selectedEpisode });
+  const dndHandlers = useRundownDnD({ api, segments: segmentsState, setSegments: setSegmentsState, selectedEpisode });
+  const onDragStart = (result) => {
+    setIsDragging(true);
+    dndHandlers.handleDragStart?.(result);
+  };
+  const onDragEnd = async (result) => {
+  try {
+    const maybe = dndHandlers.handleDragEnd?.(result);
+    if (maybe && typeof maybe.then === "function") {
+      await maybe; // wait for async persist/reorder
+    }
+    lastDropAtRef.current = Date.now();
+  } finally {
+    setIsDragging(false);
+  }
+};
 
   // Create a new cue (frontend uses "cue", backend endpoint is still /groups)
   const createCue = async (segmentId) => {
@@ -743,7 +768,7 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
   }, []);
 
   return (
-    <DragDropContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DragDropContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden" }}>
         {/* Top bar */}
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 48, background: "#fafdff", borderBottom: "1px solid #e1e6ec", display: "flex", alignItems: "center", gap: 12, padding: "0 12px", zIndex: 5 }}>
@@ -928,8 +953,8 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
                                                   {itemsProvided => (
                                                     <ul ref={itemsProvided.innerRef} {...itemsProvided.droppableProps} style={{ listStyle: "none", padding: 0, margin: 0 }}>
                                                       {(g.items || []).map((it, ii) => (
-                                                        <Draggable key={it.id} draggableId={`item-${it.id}`} index={ii}>
-                                                          {itProvided => (
+                                                        <Draggable key={`item-${it.id}`} draggableId={`item-${it.id}`} index={ii}>
+                                                          {(itProvided, itSnapshot) => (
                                                             <li
                                                               ref={itProvided.innerRef}
                                                               {...itProvided.draggableProps}
@@ -947,19 +972,20 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
                                                                   e.currentTarget.style.borderColor = "#b1c7e7";
                                                                 }
                                                               }}
-                                                              style={{
-                                                                background: selectedItem === it.id ? "#e9f3ff" : "#fff",
-                                                                border: selectedItem === it.id ? "2px solid #1976d2" : "1px solid #b1c7e7",
-                                                                borderRadius: 6,
-                                                                padding: "8px 12px",
-                                                                margin: "6px 0",
-                                                                display: "flex",
-                                                                alignItems: "center",
-                                                                transition: "background 120ms ease, border-color 120ms ease, box-shadow 120ms ease",
-                                                                boxShadow: selectedItem === it.id ? "0 2px 8px rgba(25,118,210,0.15)" : "none",
-                                                                cursor: "default",
-                                                                ...itProvided.draggableProps.style
-                                                              }}
+                                                            style={{
+                                                              background: selectedItem === it.id ? "#e9f3ff" : "#fff",
+                                                              border: selectedItem === it.id ? "2px solid #1976d2" : "1px solid #b1c7e7",
+                                                              borderRadius: 6,
+                                                              padding: "8px 12px",
+                                                              margin: "6px 0",
+                                                              display: "flex",
+                                                              alignItems: "center",
+                                                              transition: "background 120ms ease, border-color 120ms ease, box-shadow 120ms ease",
+                                                              boxShadow: selectedItem === it.id ? "0 2px 8px rgba(25,118,210,0.15)" : "none",
+                                                              cursor: "default",
+                                                              // Let the library fully control displacement/animation styles
+                                                              ...itProvided.draggableProps.style
+                                                            }}
                                                               role="button"
                                                               aria-label="Drag item"
                                                               aria-selected={selectedItem === it.id}
