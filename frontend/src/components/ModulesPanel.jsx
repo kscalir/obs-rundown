@@ -38,6 +38,13 @@ const TOOLBOX_ITEMS = [
     title: 'Presenter Note',
     description: 'Long text note for presenters',
     icon: 'NOTE'
+  },
+  {
+    id: 'audio-cue',
+    type: 'AudioCue',
+    title: 'Audio Cue',
+    description: 'Automate audio input controls',
+    icon: 'AUD'
   }
 ];
 

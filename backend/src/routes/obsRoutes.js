@@ -9,6 +9,7 @@ const obsService = require('../../services/obs');
  * - GET  /api/obs/sources/:sceneName          -> list sources in a scene (path)
  * - GET  /api/obs/placeholders?scene=NAME     -> list placeholder boxes in scene
  * - GET  /api/obs/screenshot?scene=NAME       -> base64 PNG screenshot of scene
+ * - GET  /api/obs/audio-sources               -> list all audio-capable sources
  * - POST /api/obs/add-source-to-scene         -> add existing source to a scene (body: { sceneName, sourceName, index?, visible? })
  * - POST /api/obs/replace-placeholders        -> replace placeholders (body: { sceneName, mappings })
  * - POST /api/obs/overlay/ensure              -> attach/detach overlay into a scene (body: { sceneName, attach })
@@ -237,6 +238,16 @@ router.post('/remove-source-from-scene', async (req, res) => {
     }
     const result = await obsService.removeSourceFromScene(sceneName, sourceName);
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/obs/audio-sources - List all audio sources
+router.get('/audio-sources', async (req, res) => {
+  try {
+    const audioSources = await obsService.getAudioSources();
+    res.json(audioSources);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

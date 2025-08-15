@@ -29,7 +29,6 @@ router.patch('/:id', (req, res) => {
   const { id } = req.params;
   const { title, position } = req.body;
   
-  console.log(`Updating segment ${id} with:`, { title, position });
   
   // Build the update query dynamically
   let updateFields = [];
@@ -53,7 +52,6 @@ router.patch('/:id', (req, res) => {
   
   const sql = `UPDATE rundown_segments SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
   
-  console.log('Executing SQL:', sql, 'with values:', values);
   
   try {
     const result = db.executeRun(sql, values);
@@ -75,7 +73,6 @@ router.patch('/:id', (req, res) => {
       WHERE id = ?
     `, [id]);
     
-    console.log('Updated segment result:', row);
     res.json(row);
   } catch (err) {
     return db.handleError(res, err, 'update segment');
@@ -86,7 +83,6 @@ router.patch('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const { episode_id, name, position } = req.body;
   
-  console.log('Creating segment:', { episode_id, name, position });
   
   if (!episode_id || !name) {
     return res.status(400).json({ error: 'episode_id and name are required' });
@@ -105,7 +101,6 @@ router.post('/', (req, res) => {
     // Fetch the created segment
     const row = db.executeGet('SELECT * FROM rundown_segments WHERE id = ?', [result.lastInsertRowid]);
     
-    console.log('Created segment:', row);
     res.status(201).json(row);
   } catch (err) {
     return db.handleError(res, err, 'create segment');

@@ -22,12 +22,10 @@ function PreviewImage({ url, alt, style, fallback }) {
 // Reuse graphics helper from ObsSceneEditor
 function buildGraphicsPreviewUrl(graphic, cacheBust = false) {
   if (!graphic) {
-    console.log('[FullScreenGraphic] No graphic provided to buildGraphicsPreviewUrl');
     return '';
   }
   const rawTplId = graphic.templateId || graphic.template_id;
   if (!rawTplId) {
-    console.log('[FullScreenGraphic] No template ID found in graphic:', graphic);
     return '';
   }
   const tplId = String(rawTplId).replace(/_/g, '-');
@@ -37,7 +35,6 @@ function buildGraphicsPreviewUrl(graphic, cacheBust = false) {
   if (cacheBust) {
     url += `&ts=${Date.now()}`; // only when we explicitly want to bypass cache
   }
-  console.log('[FullScreenGraphic] Generated preview URL:', url, 'for graphic:', graphic);
   return url;
 }
 
@@ -87,7 +84,6 @@ export default function FullScreenGraphic({ item, onSave }) {
     if (!item?.data) return;
     
     const itemData = item.data;
-    console.log('[FullScreenGraphic] Loading item data:', itemData);
     
     setData({
       transition: itemData.transition || { type: "cut", durationSec: 0 },
@@ -126,31 +122,20 @@ export default function FullScreenGraphic({ item, onSave }) {
 
   const transitionNeedsDuration = (t) => t && t.toLowerCase() !== "cut";
 
-  // Legacy function - now uses centralized SelectionContext
-  // Returns a numeric episode_id from URL parameters via SelectionContext
+  // Simplified ID resolution - prioritize centralized state
   const getEpisodeIdFromAnywhere = (item) => {
-    // First try the centralized episodeId from SelectionContext
+    // Centralized episodeId takes priority
     if (episodeId != null) return Number(episodeId);
     
-    // Fallback to item data for backwards compatibility
-    const first =
-      item?.episode_id ??
-      item?.episodeId ??
-      item?.data?.episode_id ??
-      item?.data?.episodeId ??
-      item?.episode?.id ??
-      item?.group?.episode_id ??
-      item?.group?.episodeId ??
-      null;
-    if (first != null && first !== '' && !Number.isNaN(Number(first))) return Number(first);
-    return null;
+    // Simple fallback to item data
+    const fallbackId = item?.episode_id ?? item?.episodeId ?? item?.data?.episode_id ?? item?.data?.episodeId ?? null;
+    return fallbackId ? Number(fallbackId) : null;
   };
 
   // Graphics modal handlers
   const createNewGraphic = async () => {
     try {
       const episodeId = getEpisodeIdFromAnywhere(item);
-      console.log('[FullScreenGraphic] Resolved episodeId for create:', episodeId, 'from item:', item);
       if (episodeId == null || Number.isNaN(Number(episodeId))) {
         throw new Error('No episode_id could be resolved for new graphic');
       }
@@ -336,7 +321,6 @@ export default function FullScreenGraphic({ item, onSave }) {
   };
 
   const handleGraphicSelected = (graphic) => {
-    console.log('[FullScreenGraphic] Graphic selected:', graphic);
     const normalized = normalizeGraphicRow(graphic);
     setField('selectedGraphic', normalized);
     closeGraphicsPicker();
@@ -357,7 +341,6 @@ export default function FullScreenGraphic({ item, onSave }) {
   };
 
   const onGraphicSaved = (savedGraphic) => {
-    console.log('[FullScreenGraphic] Graphic saved:', savedGraphic);
     const normalized = normalizeGraphicRow(savedGraphic);
     setField('selectedGraphic', normalized);
     

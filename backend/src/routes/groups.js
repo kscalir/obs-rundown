@@ -29,7 +29,6 @@ router.patch('/:id', (req, res) => {
   const { id } = req.params;
   const { title, position, segment_id } = req.body; // Add segment_id here
   
-  console.log(`Updating group ${id} with:`, { title, position, segment_id });
   
   // Build the update query dynamically
   let updateFields = [];
@@ -59,7 +58,6 @@ router.patch('/:id', (req, res) => {
   
   const sql = `UPDATE rundown_groups SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
   
-  console.log('Executing SQL:', sql, 'with values:', values);
   
   try {
     const result = db.executeRun(sql, values);
@@ -81,7 +79,6 @@ router.patch('/:id', (req, res) => {
       WHERE id = ?
     `, [id]);
     
-    console.log('Updated group result:', row);
     res.json(row);
   } catch (err) {
     return db.handleError(res, err, 'update group');
@@ -92,7 +89,6 @@ router.patch('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const { segment_id, name, position } = req.body;
   
-  console.log('Creating group:', { segment_id, name, position });
   
   if (!segment_id || !name) {
     return res.status(400).json({ error: 'segment_id and name are required' });
@@ -111,7 +107,6 @@ router.post('/', (req, res) => {
     // Fetch the created group
     const row = db.executeGet('SELECT * FROM rundown_groups WHERE id = ?', [result.lastInsertRowid]);
     
-    console.log('Created group:', row);
     res.status(201).json(row);
   } catch (err) {
     return db.handleError(res, err, 'create group');

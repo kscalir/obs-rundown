@@ -6,6 +6,7 @@ import FullScreenVideo from "./FullScreenVideo";
 import FullScreenYouTube from "./FullScreenYouTube";
 import FullScreenPdfImage from "./FullScreenPdfImage";
 import PresenterNote from "./PresenterNote";
+import AudioControllerItem from "./AudioControllerItem";
 
 export default function PropertiesPanel({
   segments,
@@ -35,7 +36,6 @@ export default function PropertiesPanel({
         }
       }
     }
-    console.debug("PropertiesPanel: resolve selectedItem", { itemId, found, segmentsCount: (segments||[]).length });
     setSelectedItem(found || null);
   }, [itemId, segments]);
 
@@ -50,11 +50,6 @@ export default function PropertiesPanel({
   const t = normalizeType(rawType);
   const cmd = selectedItem?.command || selectedItem?.data?.command;
 
-  useEffect(() => {
-    if (rawType) {
-      console.debug("PropertiesPanel: resolved type", { rawType, normalized: t });
-    }
-  }, [rawType, t]);
 
   const hasSceneData =
     !!(selectedItem?.data?.scene ||
@@ -74,6 +69,7 @@ export default function PropertiesPanel({
   const isFullScreenYouTube = t === "fullscreenyoutube";
   const isFullScreenPdfImage = t === "fullscreenpdfimage";
   const isPresenterNote = t === "presenternote";
+  const isAudioCue = t === "audiocue";
 
 
   // Merge a partial item patch into the currently selected item
@@ -121,7 +117,7 @@ export default function PropertiesPanel({
             {isObsScene ? (
               <div style={{ padding: 12 }}>
                 <ObsSceneEditor
-                  key={`obs-${String(selectedItem.id)}`}
+                  key={`obs-${String(selectedItem.id)}-${t}`}
                   item={selectedItem}
                   itemId={selectedItem.id}
                   onPatch={async (partial) => {
@@ -154,7 +150,7 @@ export default function PropertiesPanel({
               </div>
             ) : isFullScreenGraphic ? (
               <FullScreenGraphic
-                key={`graphic-${String(selectedItem.id)}`}
+                key={`graphic-${String(selectedItem.id)}-${t}`}
                 item={selectedItem}
                 onSave={async (data) => {
                   const partial = { data };
@@ -179,7 +175,7 @@ export default function PropertiesPanel({
               />
             ) : isFullScreenVideo ? (
               <FullScreenVideo
-                key={`video-${String(selectedItem.id)}`}
+                key={`video-${String(selectedItem.id)}-${t}`}
                 item={selectedItem}
                 onSave={async (data) => {
                   const partial = { data };
@@ -204,7 +200,7 @@ export default function PropertiesPanel({
               />
             ) : isFullScreenYouTube ? (
               <FullScreenYouTube
-                key={`youtube-${String(selectedItem.id)}`}
+                key={`youtube-${String(selectedItem.id)}-${t}`}
                 item={selectedItem}
                 onSave={async (data) => {
                   const partial = { data };
@@ -229,7 +225,7 @@ export default function PropertiesPanel({
               />
             ) : isFullScreenPdfImage ? (
               <FullScreenPdfImage
-                key={`pdfimage-${String(selectedItem.id)}`}
+                key={`pdfimage-${String(selectedItem.id)}-${t}`}
                 item={selectedItem}
                 onSave={async (data) => {
                   const partial = { data };
@@ -254,9 +250,30 @@ export default function PropertiesPanel({
               />
             ) : isPresenterNote ? (
               <PresenterNote
-                key={`presenter-${String(selectedItem.id)}`}
+                key={`presenter-${String(selectedItem.id)}-${t}`}
                 selectedItem={selectedItem}
                 itemData={selectedItem?.data}
+                onSave={async (data) => {
+                  const partial = { data };
+                  const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(partial),
+                  });
+                  if (!res.ok) {
+                    const t = await res.text().catch(() => "");
+                    throw new Error(t || `Failed to save item ${selectedItem.id}`);
+                  }
+                  setSelectedItem((prev) => applyLocalPatch(prev, partial));
+                  try {
+                    window.dispatchEvent(new CustomEvent("rundown:item-patched", { detail: { itemId: selectedItem.id, patch: partial } }));
+                  } catch (_) {}
+                }}
+              />
+            ) : isAudioCue ? (
+              <AudioControllerItem
+                key={`audiocue-${String(selectedItem.id)}-${t}`}
+                item={selectedItem}
                 onSave={async (data) => {
                   const partial = { data };
                   const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {

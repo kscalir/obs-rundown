@@ -984,6 +984,49 @@ class ObsService {
     await this.obs.call('RemoveSceneItem', { sceneName, sceneItemId });
     return { ok: true, removed: true };
   }
+
+  /**
+   * Get all audio sources from OBS.
+   * Returns all inputs that have audio capabilities.
+   */
+  async getAudioSources() {
+    await this.ensureConnected();
+    try {
+      const { inputs } = await this.obs.call('GetInputList');
+      
+      // Filter for sources that have audio capabilities
+      const audioSources = inputs.filter(input => {
+        const kind = String(input.inputKind || '').toLowerCase();
+        const name = String(input.inputName || '');
+        
+        // Include sources that are audio-related
+        return (
+          kind.includes('coreaudio') ||
+          kind.includes('audio') ||
+          kind.includes('capture') ||
+          kind.includes('input') ||
+          kind.includes('mic') ||
+          kind.includes('wasapi') ||
+          kind.includes('alsa') ||
+          kind.includes('pulse') ||
+          /\b(mic|audio|sound)\b/i.test(name) ||
+          // Include media sources that might have audio
+          kind.includes('ffmpeg_source') ||
+          kind.includes('vlc_source') ||
+          kind.includes('browser_source')
+        );
+      });
+
+      // Return just the names and kinds for the frontend
+      return audioSources.map(source => ({
+        name: source.inputName,
+        kind: source.inputKind
+      }));
+    } catch (err) {
+      console.error('[ObsService] Error getting audio sources:', err);
+      return [];
+    }
+  }
 }
 // Export a singleton instance used by routes
 module.exports = new ObsService();

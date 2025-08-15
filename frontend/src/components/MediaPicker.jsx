@@ -44,9 +44,7 @@ export default function MediaPicker({
 
   // Fetch media list for the selected show
   useEffect(() => {
-    console.log('MediaPicker: showId =', showId, 'isOpen =', isOpen);
     if (!showId || !isOpen) {
-      console.log('MediaPicker: No showId or not open, clearing list');
       setFilteredList([]);
       return;
     }
@@ -57,15 +55,12 @@ export default function MediaPicker({
     if (search.trim()) params.push(`search=${encodeURIComponent(search.trim())}`);
     if (params.length) url += "?" + params.join("&");
     
-    console.log('MediaPicker: Fetching from URL:', url);
     
     fetch(url)
       .then((res) => {
-        console.log('MediaPicker: Response status:', res.status, res.ok);
         return res.ok ? res.json() : [];
       })
       .then((data) => {
-        console.log('MediaPicker: Received data:', data);
         let filteredData = data;
         
         // Apply type filtering based on propTypeFilter
@@ -74,7 +69,6 @@ export default function MediaPicker({
             // For PDF/Image filtering: 'image' type for images, 'application' type for PDFs
             return propTypeFilter.includes(media.type);
           });
-          console.log('MediaPicker: Applied propTypeFilter:', propTypeFilter, 'Result count:', filteredData.length);
         } else {
           // Default behavior: Filter out audio files since this picker is for video/images only
           filteredData = data.filter(media => media.type !== 'audio');

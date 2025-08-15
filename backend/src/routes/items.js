@@ -38,7 +38,6 @@ router.patch('/:id', (req, res) => {
   const { id } = req.params;
   const { title, position, data, group_id } = req.body;
   
-  console.log(`Updating item ${id} with:`, { title, position, data, group_id });
   
   try {
     // Build the update query dynamically
@@ -73,7 +72,6 @@ router.patch('/:id', (req, res) => {
       updateFields.push('data = ?');
       values.push(JSON.stringify(mergedData));
       
-      console.log('Merging data:', { existing: existingData, incoming: data, merged: mergedData });
     }
     
     if (group_id !== undefined && group_id !== null) {
@@ -89,7 +87,6 @@ router.patch('/:id', (req, res) => {
     
     const sql = `UPDATE rundown_items SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
     
-    console.log('Executing SQL:', sql, 'with values:', values);
     
     const result = db.executeRun(sql, values);
     
@@ -108,7 +105,6 @@ router.patch('/:id', (req, res) => {
       }
     }
     
-    console.log('Updated item result:', row);
     res.json(row);
   } catch (err) {
     return db.handleError(res, err, 'update item');
@@ -138,7 +134,6 @@ router.put('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const { type, group_id, position, title, data } = req.body;
   
-  console.log('Creating item:', { type, group_id, position, title, data });
   
   if (!type || !group_id) {
     return res.status(400).json({ error: 'Type and group_id are required' });

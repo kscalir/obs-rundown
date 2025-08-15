@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { API_BASE_URL } from '../config';
 
-export default function PresenterNoteEditor({ selectedItem, itemData, setRefreshKey }) {
+export default function PresenterNote({ selectedItem, itemData, onSave }) {
   const resolveItemId = () => {
     return selectedItem?.id ?? selectedItem?.itemId ?? selectedItem?.found?.id ?? itemData?.id ?? null;
   };
@@ -57,9 +57,14 @@ export default function PresenterNoteEditor({ selectedItem, itemData, setRefresh
   const existingMemo = useMemo(() => getExistingBlob(), [itemData, selectedItem]);
 
   useEffect(() => {
-    setNote(existingMemo.note || ''); // optimistic
     const id = resolveItemId();
-    fetchLatestAndHydrate(id); // ensure we show the canonical saved value
+    if (id) {
+      // Always fetch canonical data first, don't set optimistic value
+      fetchLatestAndHydrate(id);
+    } else {
+      // No item selected, clear the note
+      setNote('');
+    }
   }, [existingMemo]);
 
   // keep a snapshot of existing blob and the item id for safe save-on-switch
@@ -124,7 +129,9 @@ export default function PresenterNoteEditor({ selectedItem, itemData, setRefresh
         lastSavedNoteRef.current = noteValue || '';
         // keep local snapshot in sync with what we just saved
         prevBlobSnapshotRef.current = nextMerged;
-        if (typeof setRefreshKey === 'function') setRefreshKey(k => k + 1);
+        if (typeof onSave === 'function') {
+          onSave(nextMerged);
+        }
         // also rehydrate from server to avoid any stale props
         fetchLatestAndHydrate(targetItemId);
         return true;
@@ -147,7 +154,9 @@ export default function PresenterNoteEditor({ selectedItem, itemData, setRefresh
       if (r2.ok) {
         lastSavedNoteRef.current = noteValue || '';
         prevBlobSnapshotRef.current = nextMerged;
-        if (typeof setRefreshKey === 'function') setRefreshKey(k => k + 1);
+        if (typeof onSave === 'function') {
+          onSave(nextMerged);
+        }
         fetchLatestAndHydrate(targetItemId);
         return true;
       } else {
@@ -172,51 +181,84 @@ export default function PresenterNoteEditor({ selectedItem, itemData, setRefresh
   useEffect(() => {
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     const id = resolveItemId();
-    autosaveTimerRef.current = setTimeout(async () => {
-      if ((lastSavedNoteRef.current || "") !== (note || "")) {
-        await saveNoteFor(id, note, existingMemo);
-      }
-    }, 1000);
+    
+    // Only set autosave timer if there are actual changes and we have a valid item ID
+    if (id && (lastSavedNoteRef.current || "") !== (note || "")) {
+      autosaveTimerRef.current = setTimeout(async () => {
+        // Double-check the conditions haven't changed during the timeout
+        const currentId = resolveItemId();
+        if (currentId === id && (lastSavedNoteRef.current || "") !== (note || "")) {
+          await saveNoteFor(id, note, existingMemo);
+        }
+      }, 1000);
+    }
+    
     return () => autosaveTimerRef.current && clearTimeout(autosaveTimerRef.current);
   }, [note]);
 
-  // Save pending changes when switching to a different rundown item
-  useEffect(() => {
-    const currentId = resolveItemId();
-    return () => { /* on unmount */ };
-  }, []);
 
   // watch selected item id changes
   useEffect(() => {
     const currentId = resolveItemId();
     const prevId = prevItemIdRef.current;
+    
     if (prevId && prevId !== currentId) {
+      // Cancel any pending autosave to prevent saving empty content
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+      
       // flush save for previous item using its snapshot
       const prevBlob = prevBlobSnapshotRef.current || {};
       const pending = note; // note belonged to previous item view
-      if ((lastSavedNoteRef.current || '') !== (pending || '')) {
+      
+      // Save any unsaved changes before switching (this handles the case where user didn't blur)
+      if ((lastSavedNoteRef.current || '') !== (pending || '') && pending && pending.trim()) {
         saveNoteFor(prevId, pending, prevBlob);
       }
+      // Clear note immediately when switching items to prevent stale data
+      setNote('');
+    } else if (currentId === prevId && currentId) {
+      // Same item but component re-rendered - save any pending changes immediately
+      const pending = note;
+      if ((lastSavedNoteRef.current || '') !== (pending || '') && pending && pending.trim()) {
+        // Cancel pending autosave and save immediately
+        if (autosaveTimerRef.current) {
+          clearTimeout(autosaveTimerRef.current);
+          autosaveTimerRef.current = null;
+        }
+        saveNoteFor(currentId, pending, existingMemo);
+      }
     }
-    // update refs to the new item and hydrate latest from server
+    // update refs to the new item 
     prevItemIdRef.current = currentId;
     prevBlobSnapshotRef.current = existingMemo;
     lastSavedNoteRef.current = existingMemo.note || '';
-    fetchLatestAndHydrate(currentId);
+    
+    // Fetch and hydrate data for the new item
+    if (currentId) {
+      fetchLatestAndHydrate(currentId);
+    }
   }, [selectedItem, itemData]);
+
+  // Keep a ref that always has the latest note value for unmount save
+  const currentNoteRef = useRef(note);
+  currentNoteRef.current = note;
 
   // Save on component unmount if there are pending changes
   useEffect(() => {
     return () => {
       const id = prevItemIdRef.current || resolveItemId();
-      const pending = note;
-      if ((lastSavedNoteRef.current || "") !== (pending || "")) {
+      const pending = currentNoteRef.current; // Use ref to get the actual latest value
+      // Only save if there are actual changes AND the pending note is not empty
+      // (empty note usually means the component was cleared during unmount)
+      if ((lastSavedNoteRef.current || "") !== (pending || "") && pending && pending.trim()) {
         saveNoteFor(id, pending, prevBlobSnapshotRef.current || existingMemo);
       }
     };
   }, []);
 
-  const verifyUpdated = () => true; // kept for backward compatibility; not used in new flow
 
   return (
     <div style={{

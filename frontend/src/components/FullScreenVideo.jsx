@@ -3,49 +3,6 @@ import { API_BASE_URL } from '../config';
 import MediaPicker from './MediaPicker.jsx';
 import { useSelection } from '../selection/SelectionContext.jsx';
 
-// Mine showId from props regardless of naming/nesting
-function getShowIdFromProps({ showId, rundown, episode, show, ...restProps }) {
-  const coerce = (v) => {
-    if (v === undefined || v === null || v === '') return null;
-    const n = Number(v);
-    return Number.isNaN(n) ? null : n;
-  };
-
-  // 1) Standard prop
-  const fromStandard = coerce(showId);
-  if (fromStandard != null) return fromStandard;
-
-  // 2) Common alternates the rest of the app might use
-  const candidateKeys = [
-    'showID', 'currentShowId', 'selectedShowId', 'activeShowId', 'rundownShowId', 'sceneShowId'
-  ];
-  for (const k of candidateKeys) {
-    if (k in restProps) {
-      const v = coerce(restProps[k]);
-      if (v != null) return v;
-    }
-  }
-
-  // 3) Nested objects often passed down from PropertiesPanel
-  const nestedDirect = coerce(
-    rundown?.show_id ?? rundown?.showId ?? rundown?.show?.id ??
-    episode?.show_id ?? episode?.showId ?? episode?.show?.id ??
-    show?.id ?? null
-  );
-  if (nestedDirect != null) return nestedDirect;
-
-  // 4) Anything in a generic `context` prop
-  const ctx = restProps?.context;
-  if (ctx) {
-    const fromCtx = coerce(
-      ctx.showId ?? ctx.show_id ?? ctx.show?.id ??
-      ctx.rundown?.showId ?? ctx.rundown?.show_id ?? ctx.rundown?.show?.id ?? null
-    );
-    if (fromCtx != null) return fromCtx;
-  }
-
-  return null;
-}
 
 // Helper to get media URL
 function getMediaUrl(media) {
@@ -61,7 +18,7 @@ function formatDuration(seconds) {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-export default function FullScreenVideo({ item, onSave, showId, rundown, episode, show, ...rest }) {
+export default function FullScreenVideo({ item, onSave, showId }) {
   // Use centralized selection state
   const { showId: contextShowId } = useSelection();
   // Data state (matches ObsSceneEditor structure minus slots)
@@ -86,7 +43,6 @@ export default function FullScreenVideo({ item, onSave, showId, rundown, episode
     if (!item?.data) return;
     
     const itemData = item.data;
-    console.log('[FullScreenVideo] Loading item data:', itemData);
     
     setData({
       transition: itemData.transition || { type: "cut", durationSec: 0 },
@@ -132,64 +88,19 @@ export default function FullScreenVideo({ item, onSave, showId, rundown, episode
 
   const transitionNeedsDuration = (t) => t && t.toLowerCase() !== "cut";
 
-  // Legacy function - now uses centralized SelectionContext
-  // Get show ID helper (simplified to prioritize centralized state)
+  // Simplified ID resolution - prioritize centralized state
   function getShowIdFromAnywhere(item) {
-    // 1) First try the centralized showId from SelectionContext
-    if (contextShowId != null) {
-      console.log('[FullScreenVideo] showId via centralized context:', contextShowId);
-      return Number(contextShowId);
-    }
+    // Centralized showId takes priority
+    if (contextShowId != null) return Number(contextShowId);
     
-    // 2) Fallback to direct fields on item for backwards compatibility
-    const directShowId =
-      item?.show_id ??
-      item?.showId ??
-      item?.data?.show_id ??
-      item?.data?.showId ??
-      item?.show?.id ??
-      null;
-    if (directShowId != null && directShowId !== '') {
-      console.log('[FullScreenVideo] showId via direct fields:', directShowId);
-      return Number(directShowId);
-    }
-
-    // 3) From nested structures commonly present in rundown items
-    const rundownShowId =
-      item?.rundown?.show_id ??
-      item?.rundown?.showId ??
-      item?.group?.show_id ??
-      item?.group?.showId ??
-      item?.episode?.show_id ??
-      item?.episode?.showId ??
-      item?.episode?.show?.id ??
-      null;
-    if (rundownShowId != null && rundownShowId !== '') {
-      console.log('[FullScreenVideo] showId via rundown/episode/group:', rundownShowId);
-      return Number(rundownShowId);
-    }
-
-    console.warn('[FullScreenVideo] Unable to resolve showId for MediaPicker. Item snapshot:', item);
-    return null;
+    // Simple fallback to item data
+    const fallbackId = item?.show_id ?? item?.showId ?? item?.data?.show_id ?? item?.data?.showId ?? null;
+    return fallbackId ? Number(fallbackId) : null;
   }
 
-  // Prefer whatever the parent actually passed, under any common key
-  const coerceId = (v) => {
-    if (v === undefined || v === null || v === '') return null;
-    const n = Number(v);
-    return Number.isNaN(n) ? null : n;
-  };
+  // Compute resolvedShowId once per render for reuse and remounting  
+  const resolvedShowId = showId ?? getShowIdFromAnywhere(item);
 
-  const propShowId = getShowIdFromProps({ showId, rundown, episode, show, ...rest });
-
-  // Compute resolvedShowId once per render for reuse and remounting
-  const resolvedShowId = propShowId ?? getShowIdFromAnywhere(item);
-
-  // One-time diagnostic log when resolvedShowId changes
-  useEffect(() => {
-    console.log('[FullScreenVideo] incoming props:', { showId, rundown, episode, show, rest });
-    console.log('[FullScreenVideo] derived propShowId =', propShowId, 'final resolvedShowId =', resolvedShowId);
-  }, [showId, rundown, episode, show, JSON.stringify(rest), propShowId, resolvedShowId]);
 
   // Media picker handlers
   const openMediaPicker = () => {
@@ -199,7 +110,6 @@ export default function FullScreenVideo({ item, onSave, showId, rundown, episode
       return;
     }
     // Debug: log the showId being used for MediaPicker
-    console.log('[FullScreenVideo] Opening MediaPicker with showId =', resolvedShowId);
     setMediaPickerModal({ open: true });
   };
 
@@ -208,7 +118,6 @@ export default function FullScreenVideo({ item, onSave, showId, rundown, episode
   };
 
   const handleMediaSelected = (media) => {
-    console.log('[FullScreenVideo] Media selected:', media);
     setField('selectedMedia', media);
     closeMediaPicker();
   };
@@ -352,7 +261,7 @@ export default function FullScreenVideo({ item, onSave, showId, rundown, episode
                   autoPlay={data.mediaProperties.autoplay}
                   loop={data.mediaProperties.loop}
                   volume={data.mediaProperties.volume}
-                  playbackRate={data.mediaProperties.playbackSpeed}
+                  playbackrate={data.mediaProperties.playbackSpeed}
                 />
               </div>
             ) : (

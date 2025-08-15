@@ -7,10 +7,6 @@ import YouTubePicker from "../YouTubePicker.jsx";
 import { useSlotSelection } from "../../hooks/useSlotSelection.js";
 import { useSelection } from "../../selection/SelectionContext.jsx";
 
-const GENERIC_SLOTS_MODE = (
-  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_EDITOR_GENERIC_SLOTS === 'true') ||
-  (typeof process !== 'undefined' && process.env && process.env.REACT_APP_EDITOR_GENERIC_SLOTS === 'true')
-);
 
 const API_BASE_URL = (typeof process !== 'undefined' && process.env?.REACT_APP_API_URL) || 'http://localhost:5050';
 
@@ -203,25 +199,18 @@ useEffect(() => {
   
   (slots || []).forEach(slot => {
     if (slot.mediaData) {
-      console.log('[ObsSceneEditor] Loading slot data for slot:', slot.slot, slot.mediaData);
       
       // Check data type and route to appropriate state
       if (slot.mediaData.youtube) {
-        console.log('[ObsSceneEditor] Found YouTube data for slot:', slot.slot);
         youtubeSelections[slot.slot] = slot.mediaData;
       } else if (slot.mediaData.pdfImage) {
-        console.log('[ObsSceneEditor] Found PDF/Image data for slot:', slot.slot);
         pdfImageSelections[slot.slot] = slot.mediaData;
       } else if (slot.mediaData.media) {
-        console.log('[ObsSceneEditor] Found media data for slot:', slot.slot);
         mediaSelections[slot.slot] = slot.mediaData;
       }
     }
   });
   
-  console.log('[ObsSceneEditor] Setting selectedMediaBySlot:', mediaSelections);
-  console.log('[ObsSceneEditor] Setting selectedYouTubeBySlot:', youtubeSelections);
-  console.log('[ObsSceneEditor] Setting selectedPdfImageBySlot:', pdfImageSelections);
   
   setSelectedMediaBySlot(mediaSelections);
   setSelectedYouTubeBySlot(youtubeSelections);
@@ -275,7 +264,6 @@ const onGraphicSaved = (updatedRow) => {
   const saveSceneData = useCallback(async (sceneData) => {
     try {
       if (isHydratingRef.current) {
-        console.log('[ObsSceneEditor] Skip save during hydration');
         return;
       }
       // Merge with existing item.data so we don't clobber slots or other keys
@@ -300,11 +288,9 @@ const onGraphicSaved = (updatedRow) => {
         notes: mergedData.notes ?? ''
       };
       if (JSON.stringify(prevScene) === JSON.stringify(nextScene)) {
-        console.log('[ObsSceneEditor] No scene changes; skipping PATCH');
         return;
       }
 
-      console.log('[ObsSceneEditor] Saving scene data (merged):', mergedData);
 
       if (typeof onPatch === 'function') {
         await onPatch({ data: mergedData });
@@ -321,7 +307,6 @@ const onGraphicSaved = (updatedRow) => {
           throw new Error(t || `Failed to save scene data for item ${itemId}`);
         }
       }
-      console.log('[ObsSceneEditor] Scene data saved successfully');
     } catch (err) {
       console.error('[ObsSceneEditor] Scene data save failed:', err);
       toast.error(err?.message || "Save failed");
@@ -363,7 +348,6 @@ const onGraphicSaved = (updatedRow) => {
         if (!response.ok) throw new Error('Failed to fetch item data');
         
         const itemData = await response.json();
-        console.log('[ObsSceneEditor] Loading scene data for item:', itemId);
         
         if (!alive) return;
         
@@ -477,7 +461,6 @@ const onGraphicSaved = (updatedRow) => {
 
             // Update slots via the hook's merge function
             // The hook will only merge if no DB data has been loaded yet
-            console.log('[ObsSceneEditor] loadSceneLayout merging slots:', JSON.stringify(nextSlots, null, 2));
             mergeWithSceneLayout(nextSlots);
 
             if (!loadedOnce) setLoadedOnce(true);
@@ -525,7 +508,6 @@ const onGraphicSaved = (updatedRow) => {
 
   // EFFECT: Preload graphics list
   useEffect(() => {
-    console.log('Effect running: checking slots for graphics', slots.length, 'slots, gfxList:', gfxList.length);
 
     // Check if we need to load graphics (if any slot has a GRAPHIC: selection but gfxList is empty)
     const needsGraphicsLoad = gfxList.length === 0 && slots.some(slot => 
@@ -534,7 +516,6 @@ const onGraphicSaved = (updatedRow) => {
 
     if (!needsGraphicsLoad) return;
 
-    console.log('Loading graphics list for selected graphics...');
     const loadGraphics = async () => {
       try {
         setGfxLoading(true);
@@ -549,7 +530,6 @@ const onGraphicSaved = (updatedRow) => {
         const rows = Array.isArray(list) ? list : (list?.rows || list?.data || []);
         const norm = (rows || []).map(normalizeGraphicRow).filter(r => r.id != null);
         setGfxList(norm);
-        console.log('Loaded graphics list:', norm.length, 'graphics');
       } catch (err) {
         console.warn('Failed to preload graphics:', err);
       } finally {
@@ -601,24 +581,14 @@ const onGraphicSaved = (updatedRow) => {
 
   // helpers
 
-  // Legacy function - now uses centralized SelectionContext
-// Returns a numeric episode_id from URL parameters via SelectionContext
+// Simplified ID resolution - prioritize centralized state
 function getEpisodeIdFromAnywhere(item, episodeIdFromContext) {
-  // First try the centralized episodeId from SelectionContext
+  // Centralized episodeId takes priority
   if (episodeIdFromContext != null) return Number(episodeIdFromContext);
   
-  // Fallback to item data for backwards compatibility
-  const first =
-    item?.episode_id ??
-    item?.episodeId ??
-    item?.data?.episode_id ??
-    item?.data?.episodeId ??
-    item?.episode?.id ??
-    null;
-
-  if (first != null && first !== '') return Number(first);
-
-  return null;
+  // Simple fallback to item data
+  const fallbackId = item?.episode_id ?? item?.episodeId ?? item?.data?.episode_id ?? item?.data?.episodeId ?? null;
+  return fallbackId ? Number(fallbackId) : null;
 }
 
 // Returns a numeric show_id from anywhere we can find it (item or URL)
@@ -635,11 +605,11 @@ function getShowIdFromAnywhere(item) {
   if (directShowId != null && directShowId !== '') return Number(directShowId);
 
   // Try to get from episode data if no direct show reference
-  const episodeId = getEpisodeIdFromAnywhere(item);
-  if (episodeId) {
+  const resolvedEpisodeId = getEpisodeIdFromAnywhere(item, episodeId);
+  if (resolvedEpisodeId) {
     // For now, assume episode ID is the same as show ID
     // This might need adjustment based on your data model
-    return Number(episodeId);
+    return Number(resolvedEpisodeId);
   }
 
   // Try URL parameters
@@ -1024,7 +994,6 @@ const closeMediaPicker = () => {
 };
 
 const handleMediaSelected = (media) => {
-  console.log('[ObsSceneEditor] handleMediaSelected called with media:', media);
   
   const slotNumber = mediaPickerModal.slot;
   if (slotNumber) {
@@ -1042,7 +1011,6 @@ const handleMediaSelected = (media) => {
       properties: defaultProperties
     };
     
-    console.log('[ObsSceneEditor] Creating mediaData object:', mediaDataObject);
     
     // Store the media selection with default properties in local state for UI
     setSelectedMediaBySlot(prev => ({
@@ -1053,10 +1021,8 @@ const handleMediaSelected = (media) => {
     // Find slot index for the hook's updateSlotMediaData function
     const slotIndex = (slots || []).findIndex(s => s && s.slot === slotNumber);
     
-    console.log('[ObsSceneEditor] Found slot index:', slotIndex, 'for slot number:', slotNumber);
     
     if (slotIndex !== -1) {
-      console.log('[ObsSceneEditor] Updating slot media data for index:', slotIndex);
       
       // Use the hook's function to update and persist the slot media data
       updateSlotMediaData(slotIndex, mediaDataObject);
@@ -1112,7 +1078,6 @@ const closeYouTubePicker = () => {
 };
 
 const handleYouTubeSelected = (youtubeData) => {
-  console.log('[ObsSceneEditor] handleYouTubeSelected called with:', youtubeData);
   
   const slotNumber = youtubePickerModal.slot;
   if (slotNumber) {
@@ -1130,7 +1095,6 @@ const handleYouTubeSelected = (youtubeData) => {
       properties: defaultProperties
     };
     
-    console.log('[ObsSceneEditor] Creating YouTube data object:', youtubeDataObject);
     
     // Store the YouTube selection with default properties in local state for UI
     setSelectedYouTubeBySlot(prev => ({
@@ -1141,10 +1105,8 @@ const handleYouTubeSelected = (youtubeData) => {
     // Find slot index for the hook's updateSlotMediaData function
     const slotIndex = (slots || []).findIndex(s => s && s.slot === slotNumber);
     
-    console.log('[ObsSceneEditor] Found slot index:', slotIndex, 'for slot number:', slotNumber);
     
     if (slotIndex !== -1) {
-      console.log('[ObsSceneEditor] Updating slot YouTube data for index:', slotIndex);
       
       // Use the hook's function to update and persist the slot YouTube data
       updateSlotMediaData(slotIndex, youtubeDataObject);
@@ -1200,7 +1162,6 @@ const closePdfImagePicker = () => {
 };
 
 const handlePdfImageSelected = (media) => {
-  console.log('[ObsSceneEditor] handlePdfImageSelected called with media:', media);
   
   const slotNumber = pdfImagePickerModal.slot;
   if (slotNumber) {
@@ -1219,7 +1180,6 @@ const handlePdfImageSelected = (media) => {
       properties: defaultProperties
     };
     
-    console.log('[ObsSceneEditor] Creating PDF/Image data object:', pdfImageDataObject);
     
     // Store the PDF/Image selection with default properties in local state for UI
     setSelectedPdfImageBySlot(prev => ({
@@ -1230,10 +1190,8 @@ const handlePdfImageSelected = (media) => {
     // Find slot index for the hook's updateSlotMediaData function
     const slotIndex = (slots || []).findIndex(s => s && s.slot === slotNumber);
     
-    console.log('[ObsSceneEditor] Found slot index:', slotIndex, 'for slot number:', slotNumber);
     
     if (slotIndex !== -1) {
-      console.log('[ObsSceneEditor] Updating slot PDF/Image data for index:', slotIndex);
       
       // Use the hook's function to update and persist the slot PDF/Image data
       updateSlotMediaData(slotIndex, pdfImageDataObject);
@@ -1282,16 +1240,13 @@ const updatePdfImageProperty = (slotNumber, property, value) => {
 const closeGraphicsModal = () => setGfxModal({ open: false, slot: null });
 
 const pickGraphicForSlot = (slotNumber, row) => {
-  console.log('Picking graphic for slot:', slotNumber, 'graphic:', row);
 
   // Update the actual slot data instead of separate state
   const slotIndex = slots.findIndex(s => s.slot === slotNumber);
-  console.log('Found slot index:', slotIndex);
 
   if (slotIndex >= 0) {
     // Store the graphic ID in the slot's selectedSource field
     const graphicSource = `GRAPHIC:${row.id}`;
-    console.log('Updating slot source to:', graphicSource);
     updateSlotSource(slotIndex, graphicSource);
     
     // Automatically set the genericType to Graphics when a graphic is selected
@@ -1306,28 +1261,22 @@ const pickGraphicForSlot = (slotNumber, row) => {
 
 // Get the selected graphic for a slot from actual slot data
 const getSelectedGraphicForSlot = (slotNumber) => {
-  console.log('Getting selected graphic for slot:', slotNumber);
   
   // First check ephemeral state (for immediate UI feedback)
   const ephemeral = selectedGraphicBySlot[slotNumber];
-  console.log('Ephemeral state:', ephemeral);
   if (ephemeral) return ephemeral;
   
   // Then check persisted slot data
   const slot = slots.find(s => s.slot === slotNumber);
-  console.log('Found slot:', slot);
   
   if (slot?.selectedSource?.startsWith('GRAPHIC:')) {
     const graphicId = slot.selectedSource.replace('GRAPHIC:', '');
-    console.log('Looking for graphic ID:', graphicId, 'in list of', gfxList.length, 'graphics');
     
     // Try to find the graphic in our loaded list
     const graphic = gfxList.find(g => g.id === graphicId);
-    console.log('Found graphic in list:', graphic);
     if (graphic) return graphic;
     
     // If not found in list, try to fetch it
-    console.log('Graphic not in list, need to fetch graphic:', graphicId);
     
     // If not found in list, return minimal data
     return {
@@ -1339,7 +1288,6 @@ const getSelectedGraphicForSlot = (slotNumber) => {
     };
   }
   
-  console.log('No graphic selected for slot');
   return null;
 };
 
@@ -1378,7 +1326,6 @@ const getSelectedGraphicForSlot = (slotNumber) => {
   }, [toast]);
 
   const setField = (path, value, save = true) => {
-    console.log('[ObsSceneEditor] setField called:', { path, value, save });
     
     setData(prev => {
       const next = structuredClone(prev);
@@ -1388,7 +1335,6 @@ const getSelectedGraphicForSlot = (slotNumber) => {
       for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]];
       obj[parts[parts.length - 1]] = value;
 
-      console.log('[ObsSceneEditor] Updated scene data:', { path, value });
 
       if (save) {
         // Save only scene data (no slots)
@@ -1460,13 +1406,6 @@ const getSelectedGraphicForSlot = (slotNumber) => {
     if (!sceneForUi || !activeCgChannel || activePlaceholderIndex == null) return;
     const phId = orderedPlaceholders[activePlaceholderIndex]?.sceneItemId ?? null;
     const targetSourceName = `CG-${activeCgChannel}`;
-    console.log('[FitCG] Request params:', {
-      sceneName: sceneForUi,
-      channel: activeCgChannel,
-      placeholderIndex: activePlaceholderIndex + 1,
-      placeholderId: phId,
-      targetSourceName
-    });
     try {
       await pastePlaceholderTransform({
         sceneName: sceneForUi,
@@ -3043,7 +2982,6 @@ const getSelectedGraphicForSlot = (slotNumber) => {
       <MediaPicker
         showId={(() => {
           const showId = getShowIdFromAnywhere(item);
-          console.log('ObsSceneEditor: Passing showId to MediaPicker:', showId, 'from item:', item);
           return showId;
         })()}
         isOpen={mediaPickerModal.open}
@@ -3064,7 +3002,6 @@ const getSelectedGraphicForSlot = (slotNumber) => {
       <MediaPicker
         showId={(() => {
           const showId = getShowIdFromAnywhere(item);
-          console.log('ObsSceneEditor: Passing showId to PDF/Image MediaPicker:', showId, 'from item:', item);
           return showId;
         })()}
         isOpen={pdfImagePickerModal.open}

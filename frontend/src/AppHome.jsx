@@ -99,8 +99,6 @@ function AppInner() {
     return <ShowsHome onShowSelected={handleShowSelected} />;
   }
 
-  // Debug: log selectedTab to verify state changes
-  console.log('Current selectedTab:', selectedTab);
 
   // If show selected, render the main panel full-page with header and tab bar at the top
   return (
