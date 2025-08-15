@@ -31,31 +31,28 @@ const TOOLBOX_ITEMS = [
     title: 'Full Screen PDF/Image',
     description: 'Images and PDFs with transforms',
     icon: 'IMG'
+  },
+  {
+    id: 'presenter-note',
+    type: 'PresenterNote',
+    title: 'Presenter Note',
+    description: 'Long text note for presenters',
+    icon: 'NOTE'
   }
 ];
 
-export default function ModulesPanel({ onModuleSelected }) {
+function ModulesPanel({ onModuleSelected }) {
   const [scenes, setScenes] = useState([]);
   const [currentScene, setCurrentScene] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('toolbox'); // 'toolbox' or 'scenes'
-  const [refreshKey, setRefreshKey] = useState(0); // Force re-render after successful drops
 
   // Fetch OBS scenes on component mount
   useEffect(() => {
     fetchOBSScenes();
   }, []);
 
-  // Listen for successful toolbox drops to clear drag state
-  useEffect(() => {
-    const handleDragComplete = () => {
-      setRefreshKey(prev => prev + 1);
-    };
-    
-    window.addEventListener('toolbox:drag-complete', handleDragComplete);
-    return () => window.removeEventListener('toolbox:drag-complete', handleDragComplete);
-  }, []);
 
   async function fetchOBSScenes() {
     try {
@@ -182,7 +179,66 @@ export default function ModulesPanel({ onModuleSelected }) {
             padding: "16px 12px",
             overflow: "visible"
           }}>
-            <Droppable droppableId="toolbox" type="item" isDropDisabled={true}>
+            <Droppable
+              droppableId="toolbox"
+              type="item"
+              isDropDisabled={true}
+              renderClone={(provided, snapshot, rubric) => {
+                const item = TOOLBOX_ITEMS[rubric.source.index];
+                return (
+                  <div
+                    ref={provided.innerRef}
+                    {...provided.draggableProps}
+                    {...provided.dragHandleProps}
+                    style={{
+                      ...provided.draggableProps.style,
+                      padding: "12px 16px",
+                      backgroundColor: "#e3f2fd",
+                      border: "1px solid #e1e6ec",
+                      borderRadius: "8px",
+                      cursor: "grabbing",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                      opacity: snapshot.isDropAnimating ? 0 : 1,
+                      transition: snapshot.isDropAnimating 
+                        ? "opacity 150ms ease, transform 150ms ease" 
+                        : "opacity 120ms ease, box-shadow 120ms ease, transform 120ms ease",
+                      pointerEvents: "none"
+                    }}
+                  >
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      backgroundColor: "#e3f2fd",
+                      borderRadius: "6px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      color: "#1976d2",
+                      flexShrink: 0
+                    }}>
+                      {item.icon}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        color: "#333",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap"
+                      }}>
+                        {item.title}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }}
+            >
               {(provided, snapshot) => (
                 <div
                   ref={provided.innerRef}
@@ -218,10 +274,10 @@ export default function ModulesPanel({ onModuleSelected }) {
                             boxShadow: dragSnapshot.isDragging
                               ? "0 8px 24px rgba(0,0,0,0.15)"
                               : "0 2px 4px rgba(0,0,0,0.05)",
-                            transform: dragSnapshot.isDragging
-                              ? dragProvided.draggableProps.style?.transform
-                              : "none",
-                            transition: dragSnapshot.isDragging ? "none" : "all 0.2s"
+                            willChange: "transform",
+                            transition: "opacity 160ms ease, box-shadow 160ms ease, transform 160ms ease",
+                            transform: dragSnapshot.isDragging ? "scale(1.02)" : "scale(1)",
+                            opacity: dragSnapshot.isDragging ? 0.95 : 1,
                           }}
                         >
                           {/* Icon */}
@@ -369,7 +425,67 @@ export default function ModulesPanel({ onModuleSelected }) {
                   </button>
                 </div>
               ) : (
-                <Droppable droppableId="obs-scenes" type="item" isDropDisabled={true}>
+                <Droppable
+                  droppableId="obs-scenes"
+                  type="item"
+                  isDropDisabled={true}
+                renderClone={(provided, snapshot, rubric) => {
+                  const scene = scenes[rubric.source.index];
+                  const label = scene?.sceneName || "Scene";
+                  return (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.draggableProps}
+                      {...provided.dragHandleProps}
+                      style={{
+                        ...provided.draggableProps.style,
+                        padding: "12px 16px",
+                        backgroundColor: "#e3f2fd",
+                        border: "1px solid #e1e6ec",
+                        borderRadius: "8px",
+                        cursor: "grabbing",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                        fontSize: "14px",
+                        boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                        opacity: snapshot.isDropAnimating ? 0 : 1,
+                        transition: snapshot.isDropAnimating 
+                          ? "opacity 150ms ease, transform 150ms ease" 
+                          : "opacity 120ms ease, box-shadow 120ms ease, transform 120ms ease",
+                        pointerEvents: "none"
+                      }}
+                    >
+                      <div style={{
+                        width: 32,
+                        height: 32,
+                        backgroundColor: "#e3f2fd",
+                        borderRadius: "6px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        color: "#1976d2",
+                        flexShrink: 0
+                      }}>
+                        SCN
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{
+                          fontWeight: 600,
+                          color: "#333",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap"
+                        }}>
+                          {label}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }}
+                >
                   {(provided, snapshot) => (
                     <div
                       ref={provided.innerRef}
@@ -390,7 +506,7 @@ export default function ModulesPanel({ onModuleSelected }) {
                             index={index}
                           >
                             {(dragProvided, dragSnapshot) => (
-                              <div
+                          <div
                                 ref={dragProvided.innerRef}
                                 {...dragProvided.draggableProps}
                                 {...dragProvided.dragHandleProps}
@@ -408,10 +524,10 @@ export default function ModulesPanel({ onModuleSelected }) {
                                   boxShadow: dragSnapshot.isDragging
                                     ? "0 8px 24px rgba(0,0,0,0.15)"
                                     : "0 2px 4px rgba(0,0,0,0.05)",
-                                  transform: dragSnapshot.isDragging
-                                    ? dragProvided.draggableProps.style?.transform
-                                    : "none",
-                                  transition: dragSnapshot.isDragging ? "none" : "all 0.2s"
+                                  willChange: "transform",
+                                  transition: "opacity 160ms ease, box-shadow 160ms ease, transform 160ms ease",
+                                  transform: dragSnapshot.isDragging ? "scale(1.02)" : "scale(1)",
+                                  opacity: dragSnapshot.isDragging ? 0.95 : 1,
                                 }}
                               >
                                 {/* Scene Icon */}
@@ -498,3 +614,4 @@ export default function ModulesPanel({ onModuleSelected }) {
     </div>
   );
 }
+export default React.memo(ModulesPanel);

@@ -168,6 +168,16 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
   const loading = epLoading || segLoading;
 
   // DnD
+  // Smooth out the visual disappearance of a dragged item when dropping (fade while drop anim plays)
+  function getDropStyle(draggableStyle, snapshot) {
+    const style = { ...(draggableStyle || {}) };
+    if (snapshot && snapshot.isDropAnimating) {
+      // shorten the default drop duration and fade out to avoid a hard pop
+      style.transitionDuration = '160ms';
+      style.opacity = 0;
+    }
+    return style;
+  }
   // Track active drag to avoid syncing server data mid‑drag
   const [isDragging, setIsDragging] = useState(false);
   const [segmentsState, setSegmentsState] = useState([]);
@@ -267,16 +277,17 @@ const lastDropAtRef = useRef(0);
     dndHandlers.handleDragStart?.(result);
   };
   const onDragEnd = async (result) => {
-  try {
-    const maybe = dndHandlers.handleDragEnd?.(result);
-    if (maybe && typeof maybe.then === "function") {
-      await maybe; // wait for async persist/reorder
+    try {
+      const maybe = dndHandlers.handleDragEnd?.(result);
+      if (maybe && typeof maybe.then === "function") {
+        await maybe; // wait for async persist/reorder
+      }
+      lastDropAtRef.current = Date.now();
+    } finally {
+      // allow the library's drop animation to complete before reconciling
+      setTimeout(() => setIsDragging(false), 120);
     }
-    lastDropAtRef.current = Date.now();
-  } finally {
-    setIsDragging(false);
-  }
-};
+  };
 
   // Create a new cue (frontend uses "cue", backend endpoint is still /groups)
   const createCue = async (segmentId) => {
@@ -662,6 +673,14 @@ const lastDropAtRef = useRef(0);
   // Selected item
   const [selectedItem, setSelectedItem] = useState(null);
 
+  // Track which item ids have already been rendered once (to animate only on initial mount)
+  const seenItemIdsRef = useRef(new Set());
+  // After each render pass, mark currently visible items as seen so they won't re-animate
+  useEffect(() => {
+    const set = seenItemIdsRef.current;
+    (segmentsState || []).forEach(seg => (seg.groups || []).forEach(g => (g.items || []).forEach(it => set.add(it.id))));
+  }, [segmentsState]);
+
   // per-episode key
   const ITEM_KEY = useMemo(
     () => `rundown_selectedItem:${selectedEpisode?.id ?? "none"}`,
@@ -767,8 +786,17 @@ const lastDropAtRef = useRef(0);
     return () => window.removeEventListener('rundown:item-patched', onPatched);
   }, []);
 
+  const fadeInStyles = (
+    <style>
+      {`
+        @keyframes itemFadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+      `}
+    </style>
+  );
+
   return (
     <DragDropContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
+      {fadeInStyles}
       <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden" }}>
         {/* Top bar */}
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 48, background: "#fafdff", borderBottom: "1px solid #e1e6ec", display: "flex", alignItems: "center", gap: 12, padding: "0 12px", zIndex: 5 }}>
@@ -955,10 +983,11 @@ const lastDropAtRef = useRef(0);
                                                       {(g.items || []).map((it, ii) => (
                                                         <Draggable key={`item-${it.id}`} draggableId={`item-${it.id}`} index={ii}>
                                                           {(itProvided, itSnapshot) => (
-                                                            <li
+                                                        <li
                                                               ref={itProvided.innerRef}
                                                               {...itProvided.draggableProps}
                                                               {...itProvided.dragHandleProps}
+                                                              data-new={!seenItemIdsRef.current.has(it.id)}
                                                               onClick={() => setSelectedItem(it.id)}
                                                               onMouseEnter={e => {
                                                                 if (selectedItem !== it.id) {
@@ -980,11 +1009,12 @@ const lastDropAtRef = useRef(0);
                                                               margin: "6px 0",
                                                               display: "flex",
                                                               alignItems: "center",
-                                                              transition: "background 120ms ease, border-color 120ms ease, box-shadow 120ms ease",
+                                                              transition: "background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, opacity 160ms ease",
                                                               boxShadow: selectedItem === it.id ? "0 2px 8px rgba(25,118,210,0.15)" : "none",
                                                               cursor: "default",
-                                                              // Let the library fully control displacement/animation styles
-                                                              ...itProvided.draggableProps.style
+                                                              // Let the library fully control displacement/animation styles (with a soft fade during drop)
+                                                              ...getDropStyle(itProvided.draggableProps.style, itSnapshot),
+                                                              animation: !seenItemIdsRef.current.has(it.id) ? "itemFadeIn 160ms ease" : undefined
                                                             }}
                                                               role="button"
                                                               aria-label="Drag item"
