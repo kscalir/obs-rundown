@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { API_BASE_URL } from '../config';
 import GraphicsTemplateEditor from './properties/GraphicsTemplateEditor.jsx';
+import { useSelection } from '../selection/SelectionContext.jsx';
 
 // Helper for graceful image preview fallback
 function PreviewImage({ url, alt, style, fallback }) {
@@ -63,6 +64,8 @@ function normalizeGraphicRow(raw) {
 }
 
 export default function FullScreenGraphic({ item, onSave }) {
+  // Use centralized selection state
+  const { episodeId } = useSelection();
   // Data state (matches ObsSceneEditor structure minus slots)
   const [data, setData] = useState({
     transition: { type: "cut", durationSec: 0 },
@@ -123,8 +126,13 @@ export default function FullScreenGraphic({ item, onSave }) {
 
   const transitionNeedsDuration = (t) => t && t.toLowerCase() !== "cut";
 
-  // Returns a numeric episode_id from anywhere we can find it (item or URL query string)
+  // Legacy function - now uses centralized SelectionContext
+  // Returns a numeric episode_id from URL parameters via SelectionContext
   const getEpisodeIdFromAnywhere = (item) => {
+    // First try the centralized episodeId from SelectionContext
+    if (episodeId != null) return Number(episodeId);
+    
+    // Fallback to item data for backwards compatibility
     const first =
       item?.episode_id ??
       item?.episodeId ??
@@ -135,12 +143,6 @@ export default function FullScreenGraphic({ item, onSave }) {
       item?.group?.episodeId ??
       null;
     if (first != null && first !== '' && !Number.isNaN(Number(first))) return Number(first);
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      // support both `?episode=` and `?episodeId=`
-      if (sp.has('episode')) return Number(sp.get('episode'));
-      if (sp.has('episodeId')) return Number(sp.get('episodeId'));
-    } catch (_) { /* SSR/no-window safe */ }
     return null;
   };
 

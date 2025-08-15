@@ -3,9 +3,16 @@ import ShowsPanel from "./components/ShowsPanel";
 import MainPanel from "./components/MainPanel";
 import RightPanel from "./components/RightPanel";
 import { API_BASE_URL } from "./config";
+import { SelectionProvider, useSelection } from "./selection/SelectionContext.jsx";
 
+// If you want localStorage fallback for first load:
+const boot = {
+  showId: (() => Number(localStorage.getItem("obsRundownShowId")) || null)(),
+  // optional: episodeId/itemId localStorage fallbacks if you have them
+};
 
-function App() {
+// Inner component that uses useSelection
+function AppInner() {
   // Right panel width state and drag logic
   const [rightPanelWidth, setRightPanelWidth] = useState(360);
   const dragging = useRef(false);
@@ -39,24 +46,30 @@ function App() {
     document.body.style.cursor = "ew-resize";
     e.preventDefault();
   }
-  // Initialize show as null
+  // Use centralized selection state
+  const { showId, setShowId } = useSelection();
+  
+  // Initialize show state for compatibility with existing components
   const [show, setShow] = useState(null);
-
-  // Load show ID from localStorage
+  
+  // Sync show state with centralized showId
   useEffect(() => {
-    const savedShowId = localStorage.getItem("obsRundownShowId");
-    console.log("Loaded show id from localStorage:", savedShowId);
-    if (savedShowId) {
-      setShow({ id: savedShowId });
+    if (showId) {
+      setShow({ id: showId });
+      localStorage.setItem("obsRundownShowId", showId);
+    } else {
+      setShow(null);
     }
-  }, []);
-
-  // Save show ID to localStorage
-  useEffect(() => {
-    if (show && show.id) {
-      localStorage.setItem("obsRundownShowId", show.id);
+  }, [showId]);
+  
+  // Handle show selection (update centralized state)
+  const handleSetShow = (newShow) => {
+    if (newShow && newShow.id) {
+      setShowId(Number(newShow.id));
+    } else {
+      setShowId(null);
     }
-  }, [show]);
+  };
 
   const [segments, setSegments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -305,8 +318,9 @@ function App() {
     }}>
       {/* Left panel: ShowsPanel */}
       <div style={{ width: 250, minWidth: 0, maxWidth: 250, borderRight: "1px solid #ccc", padding: 10 }}>
-        <ShowsPanel show={show} setShow={setShow} />
+        <ShowsPanel show={show} setShow={handleSetShow} />
       </div>
+
       {/* Main content panel */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", height: "100vh" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -335,6 +349,7 @@ function App() {
             />
           )}
         </div>
+
         {/* Draggable divider */}
         <div
           style={{
@@ -346,23 +361,32 @@ function App() {
           }}
           onMouseDown={startDrag}
         />
+
         {/* Right panel, resizable */}
-       <div
-  style={{
-    width: rightPanelWidth,
-    minWidth: 0,
-    height: "100vh",
-    overflow: "hidden",
-    boxSizing: "border-box"
-  }}
->
-  <RightPanel 
-    rightPanelWidth={rightPanelWidth}
-    setRightPanelWidth={setRightPanelWidth}
-  />
-</div>
+        <div
+          style={{
+            width: rightPanelWidth,
+            minWidth: 0,
+            height: "100vh",
+            overflow: "hidden",
+            boxSizing: "border-box"
+          }}
+        >
+          <RightPanel 
+            rightPanelWidth={rightPanelWidth}
+            setRightPanelWidth={setRightPanelWidth}
+          />
+        </div>
       </div>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <SelectionProvider initial={boot}>
+      <AppInner />
+    </SelectionProvider>
   );
 }
 

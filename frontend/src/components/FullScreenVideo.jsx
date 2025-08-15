@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
 import MediaPicker from './MediaPicker.jsx';
+import { useSelection } from '../selection/SelectionContext.jsx';
 
 // Mine showId from props regardless of naming/nesting
 function getShowIdFromProps({ showId, rundown, episode, show, ...restProps }) {
@@ -61,6 +62,8 @@ function formatDuration(seconds) {
 }
 
 export default function FullScreenVideo({ item, onSave, showId, rundown, episode, show, ...rest }) {
+  // Use centralized selection state
+  const { showId: contextShowId } = useSelection();
   // Data state (matches ObsSceneEditor structure minus slots)
   const [data, setData] = useState({
     transition: { type: "cut", durationSec: 0 },
@@ -129,9 +132,16 @@ export default function FullScreenVideo({ item, onSave, showId, rundown, episode
 
   const transitionNeedsDuration = (t) => t && t.toLowerCase() !== "cut";
 
-  // Get show ID helper (match ObsSceneEditor behavior, with extra fallbacks + diagnostics)
+  // Legacy function - now uses centralized SelectionContext
+  // Get show ID helper (simplified to prioritize centralized state)
   function getShowIdFromAnywhere(item) {
-    // 1) Direct fields on item
+    // 1) First try the centralized showId from SelectionContext
+    if (contextShowId != null) {
+      console.log('[FullScreenVideo] showId via centralized context:', contextShowId);
+      return Number(contextShowId);
+    }
+    
+    // 2) Fallback to direct fields on item for backwards compatibility
     const directShowId =
       item?.show_id ??
       item?.showId ??
@@ -144,7 +154,7 @@ export default function FullScreenVideo({ item, onSave, showId, rundown, episode
       return Number(directShowId);
     }
 
-    // 2) From nested structures commonly present in rundown items
+    // 3) From nested structures commonly present in rundown items
     const rundownShowId =
       item?.rundown?.show_id ??
       item?.rundown?.showId ??
@@ -158,76 +168,6 @@ export default function FullScreenVideo({ item, onSave, showId, rundown, episode
       console.log('[FullScreenVideo] showId via rundown/episode/group:', rundownShowId);
       return Number(rundownShowId);
     }
-
-    // 3) Try episode id as proxy (if your model maps episode -> show elsewhere)
-    const episodeId = (
-      item?.episode_id ??
-      item?.episodeId ??
-      item?.data?.episode_id ??
-      item?.data?.episodeId ??
-      item?.episode?.id ??
-      null
-    );
-    if (episodeId != null && episodeId !== '') {
-      console.log('[FullScreenVideo] using episodeId as fallback showId:', episodeId);
-      return Number(episodeId);
-    }
-
-    // 4) URL query (?showId=123)
-    try {
-      const u = new URL(window.location.href);
-      const qs = u.searchParams.get('showId');
-      if (qs) {
-        console.log('[FullScreenVideo] showId via query param:', qs);
-        return Number(qs);
-      }
-    } catch {}
-
-    // 5) URL pathname patterns: /shows/123, /show/123, /rundown/456/show/123
-    try {
-      const path = window.location.pathname || '';
-      const patterns = [
-        /\bshows\/(\d+)\b/i,
-        /\bshow\/(\d+)\b/i,
-        /\brundown\/(\d+)\/show\/(\d+)\b/i,
-        /\bepisodes?\/(\d+)\/show\/(\d+)\b/i,
-      ];
-      for (const rx of patterns) {
-        const m = path.match(rx);
-        if (m) {
-          const id = Number(m[m.length - 1]);
-          if (!Number.isNaN(id)) {
-            console.log('[FullScreenVideo] showId via pathname match:', id, 'from', path);
-            return id;
-          }
-        }
-      }
-    } catch {}
-
-    // 6) window globals commonly set by the app
-    try {
-      const g = window || {};
-      const fromGlobal =
-        g.__APP_CONTEXT__?.showId ??
-        g.__APP_CONTEXT__?.show?.id ??
-        g.__RUNDOWN__?.show_id ??
-        g.__RUNDOWN__?.showId ??
-        g.__CURRENT_SHOW_ID__ ??
-        null;
-      if (fromGlobal != null && fromGlobal !== '') {
-        console.log('[FullScreenVideo] showId via window global:', fromGlobal);
-        return Number(fromGlobal);
-      }
-    } catch {}
-
-    // 7) LocalStorage fallback used elsewhere in the app
-    try {
-      const ls = localStorage.getItem('currentShowId');
-      if (ls) {
-        console.log('[FullScreenVideo] showId via localStorage:', ls);
-        return Number(ls);
-      }
-    } catch {}
 
     console.warn('[FullScreenVideo] Unable to resolve showId for MediaPicker. Item snapshot:', item);
     return null;

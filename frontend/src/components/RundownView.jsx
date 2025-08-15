@@ -14,7 +14,7 @@ import { useRundownDnD } from "../dnd/useRundownDnD";
 import { AddButton, IconButton } from "../components/Buttons.jsx";
 import PropertiesPanel from "./PropertiesPanel";
 import ModulesPanel from "./ModulesPanel";
-import { useQueryParam } from "../hooks/useQueryParam";
+import { useSelection } from "../selection/SelectionContext.jsx";
 import { ToastContainer } from "react-toastify";
 
 import "react-toastify/dist/ReactToastify.css";
@@ -138,16 +138,10 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
   // Episodes
   const { episodes, selectedEpisode, setSelectedEpisode, loading: epLoading } = useEpisodes(api, showId);
 
-  const [urlEpisodeId, setUrlEpisodeId] = useQueryParam("episode", {
-    parse: v => Number(v),
-    serialize: v => (v == null ? null : String(v))
-  });
-  const [urlItemId, setUrlItemId] = useQueryParam("item", {
-    parse: v => Number(v),
-    serialize: v => (v == null ? null : String(v))
-  });
+  // Use centralized selection state
+  const { episodeId: urlEpisodeId, setEpisodeId: setUrlEpisodeId, itemId: urlItemId, setItemId: setUrlItemId } = useSelection();
 
-  // Sync selected episode with ?episode=
+  // Sync selected episode with ?episodeId=
   useEffect(() => {
     if (!episodes.length) return;
     // prefer URL if it matches an episode

@@ -1,13 +1,49 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ShowsHome from "./components/ShowsHome";
 import MainPanel from "./components/MainPanel";
+import { SelectionProvider, useSelection } from "./selection/SelectionContext.jsx";
 
-export default function App() {
+// If you want localStorage fallback for first load:
+const boot = {
+  showId: (() => {
+    const savedShow = localStorage.getItem("obsRundownShow");
+    try {
+      return savedShow ? JSON.parse(savedShow).id : null;
+    } catch {
+      return null;
+    }
+  })(),
+};
+
+function AppInner() {
+  // Use centralized selection state
+  const { showId, setShowId } = useSelection();
+  
   // Load selected show and tab from localStorage on mount
   const [selectedShow, setSelectedShow] = useState(() => {
     const savedShow = localStorage.getItem("obsRundownShow");
     return savedShow ? JSON.parse(savedShow) : null;
   });
+  
+  // Sync selectedShow with centralized showId
+  useEffect(() => {
+    if (showId) {
+      const savedShow = localStorage.getItem("obsRundownShow");
+      if (savedShow) {
+        try {
+          const parsed = JSON.parse(savedShow);
+          if (parsed.id === showId) {
+            setSelectedShow(parsed);
+            return;
+          }
+        } catch {}
+      }
+      // If we have showId but no matching localStorage, create minimal show object
+      setSelectedShow({ id: showId, name: `Show ${showId}` });
+    } else {
+      setSelectedShow(null);
+    }
+  }, [showId]);
   const [selectedTab, setSelectedTab] = useState(() => {
     const savedTab = localStorage.getItem("obsRundownLastTab");
     return savedTab || "rundown";
@@ -15,8 +51,8 @@ export default function App() {
 
   // When a show is selected, restore last tab for that show
   const handleShowSelected = (show) => {
-    setSelectedShow(show);
     if (show && show.id) {
+      setShowId(Number(show.id)); // Update centralized state
       localStorage.setItem("obsRundownShow", JSON.stringify(show));
       // Try to restore last tab for this show
       const tabStateRaw = localStorage.getItem("obsRundownTabState");
@@ -36,7 +72,7 @@ export default function App() {
 
   // Back to show list handler
   const handleBackToShows = () => {
-    setSelectedShow(null);
+    setShowId(null); // Update centralized state
     localStorage.removeItem("obsRundownShow");
   };
 
@@ -193,5 +229,13 @@ export default function App() {
         />
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <SelectionProvider initial={boot}>
+      <AppInner />
+    </SelectionProvider>
   );
 }

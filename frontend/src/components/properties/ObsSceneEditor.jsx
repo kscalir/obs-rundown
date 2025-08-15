@@ -5,6 +5,7 @@ import SlotSelector from "./SlotSelector.jsx";
 import MediaPicker from "../MediaPicker.jsx";
 import YouTubePicker from "../YouTubePicker.jsx";
 import { useSlotSelection } from "../../hooks/useSlotSelection.js";
+import { useSelection } from "../../selection/SelectionContext.jsx";
 
 const GENERIC_SLOTS_MODE = (
   (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_EDITOR_GENERIC_SLOTS === 'true') ||
@@ -111,6 +112,8 @@ function useDebouncedCallback(fn, delay = 400) {
 }
 
 export default function ObsSceneEditor({ item, onPatch, applyToObs = false }) {
+  // Use centralized selection state
+  const { episodeId } = useSelection();
   // Keep a stable numeric item id to hand off to child editors
   const itemId = (item && (item.id ?? item.itemId) != null)
     ? Number(item.id ?? item.itemId)
@@ -598,8 +601,13 @@ const onGraphicSaved = (updatedRow) => {
 
   // helpers
 
-  // Returns a numeric episode_id from anywhere we can find it (item or URL)
-function getEpisodeIdFromAnywhere(item) {
+  // Legacy function - now uses centralized SelectionContext
+// Returns a numeric episode_id from URL parameters via SelectionContext
+function getEpisodeIdFromAnywhere(item, episodeIdFromContext) {
+  // First try the centralized episodeId from SelectionContext
+  if (episodeIdFromContext != null) return Number(episodeIdFromContext);
+  
+  // Fallback to item data for backwards compatibility
   const first =
     item?.episode_id ??
     item?.episodeId ??
@@ -609,11 +617,6 @@ function getEpisodeIdFromAnywhere(item) {
     null;
 
   if (first != null && first !== '') return Number(first);
-
-  try {
-    const sp = new URLSearchParams(window.location.search);
-    if (sp.has('episode')) return Number(sp.get('episode'));
-  } catch (_) { /* SSR/no-window safe */ }
 
   return null;
 }
@@ -804,10 +807,10 @@ const openGraphicsModal = async (slotNumber) => {
   setGfxLoading(true);
   setGfxModal({ open: true, slot: slotNumber });
   try {
-    const episodeId = getEpisodeIdFromAnywhere(item);
+    const resolvedEpisodeId = getEpisodeIdFromAnywhere(item, episodeId);
     let url = `${API_BASE_URL}/api/graphics`;
-    if (episodeId != null) {
-      url += `?episodeId=${encodeURIComponent(Number(episodeId))}`;
+    if (resolvedEpisodeId != null) {
+      url += `?episodeId=${encodeURIComponent(Number(resolvedEpisodeId))}`;
     }
     const res = await fetch(url);
 
@@ -846,7 +849,7 @@ const createAndOpenNewGraphic = async (slotNumber) => {
   // Open editor immediately in a pending state so UX is instant
   setGfxEditor({ open: true, graphicId: '__PENDING__', slot: slotNumber ?? gfxModal.slot ?? null });
 
-  const epId = getEpisodeIdFromAnywhere(item);
+  const epId = getEpisodeIdFromAnywhere(item, episodeId);
   if (epId == null || Number.isNaN(Number(epId))) {
     setGfxError('Missing episode_id; cannot create.');
     // Keep the picker open but close the pending editor since we can't proceed
