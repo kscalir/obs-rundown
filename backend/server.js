@@ -23,13 +23,17 @@ const server = http.createServer(app);
 
 // Middleware
 
-app.use(cors({
-  origin: '*', // or your frontend origin
+// CORS config (must not use "*" when sending credentials)
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
+const corsOptions = {
+  origin: true, // Allow all origins temporarily
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization']
-}));
+  allowedHeaders: ['Content-Type','Authorization'],
+  credentials: true,
+};
 
-app.options('*', cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

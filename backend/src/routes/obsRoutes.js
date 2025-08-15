@@ -68,8 +68,9 @@ router.get('/placeholders', async (req, res) => {
     // Always return an array for the frontend
     res.json(Array.isArray(placeholders) ? placeholders : []);
   } catch (err) {
-    // On error, still return a consistent shape to avoid .map crashes
-    res.status(500).json({ error: err.message });
+    console.error('[OBS API] Error getting placeholders:', err.message);
+    // On error, still return empty array to avoid .map crashes in frontend
+    res.json([]);
   }
 });
 
@@ -85,7 +86,9 @@ router.get('/screenshot', async (req, res) => {
     const screenshot = await obsService.getSceneScreenshot(scene, { width, height });
     res.json({ screenshot });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[OBS API] Error getting screenshot:', err.message);
+    // Return a fallback response that won't break the frontend
+    res.json({ screenshot: null, error: 'OBS connection failed' });
   }
 });
 

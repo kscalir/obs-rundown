@@ -2,6 +2,50 @@ import React, { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
 import MediaPicker from './MediaPicker.jsx';
 
+// Mine showId from props regardless of naming/nesting
+function getShowIdFromProps({ showId, rundown, episode, show, ...restProps }) {
+  const coerce = (v) => {
+    if (v === undefined || v === null || v === '') return null;
+    const n = Number(v);
+    return Number.isNaN(n) ? null : n;
+  };
+
+  // 1) Standard prop
+  const fromStandard = coerce(showId);
+  if (fromStandard != null) return fromStandard;
+
+  // 2) Common alternates the rest of the app might use
+  const candidateKeys = [
+    'showID', 'currentShowId', 'selectedShowId', 'activeShowId', 'rundownShowId', 'sceneShowId'
+  ];
+  for (const k of candidateKeys) {
+    if (k in restProps) {
+      const v = coerce(restProps[k]);
+      if (v != null) return v;
+    }
+  }
+
+  // 3) Nested objects often passed down from PropertiesPanel
+  const nestedDirect = coerce(
+    rundown?.show_id ?? rundown?.showId ?? rundown?.show?.id ??
+    episode?.show_id ?? episode?.showId ?? episode?.show?.id ??
+    show?.id ?? null
+  );
+  if (nestedDirect != null) return nestedDirect;
+
+  // 4) Anything in a generic `context` prop
+  const ctx = restProps?.context;
+  if (ctx) {
+    const fromCtx = coerce(
+      ctx.showId ?? ctx.show_id ?? ctx.show?.id ??
+      ctx.rundown?.showId ?? ctx.rundown?.show_id ?? ctx.rundown?.show?.id ?? null
+    );
+    if (fromCtx != null) return fromCtx;
+  }
+
+  return null;
+}
+
 // Helper to get media URL
 function getMediaUrl(media) {
   if (!media?.filename) return '';
@@ -16,7 +60,7 @@ function formatDuration(seconds) {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-export default function FullScreenVideo({ item, onSave }) {
+export default function FullScreenVideo({ item, onSave, showId, rundown, episode, show, ...rest }) {
   // Data state (matches ObsSceneEditor structure minus slots)
   const [data, setData] = useState({
     transition: { type: "cut", durationSec: 0 },
@@ -85,8 +129,137 @@ export default function FullScreenVideo({ item, onSave }) {
 
   const transitionNeedsDuration = (t) => t && t.toLowerCase() !== "cut";
 
+  // Get show ID helper (match ObsSceneEditor behavior, with extra fallbacks + diagnostics)
+  function getShowIdFromAnywhere(item) {
+    // 1) Direct fields on item
+    const directShowId =
+      item?.show_id ??
+      item?.showId ??
+      item?.data?.show_id ??
+      item?.data?.showId ??
+      item?.show?.id ??
+      null;
+    if (directShowId != null && directShowId !== '') {
+      console.log('[FullScreenVideo] showId via direct fields:', directShowId);
+      return Number(directShowId);
+    }
+
+    // 2) From nested structures commonly present in rundown items
+    const rundownShowId =
+      item?.rundown?.show_id ??
+      item?.rundown?.showId ??
+      item?.group?.show_id ??
+      item?.group?.showId ??
+      item?.episode?.show_id ??
+      item?.episode?.showId ??
+      item?.episode?.show?.id ??
+      null;
+    if (rundownShowId != null && rundownShowId !== '') {
+      console.log('[FullScreenVideo] showId via rundown/episode/group:', rundownShowId);
+      return Number(rundownShowId);
+    }
+
+    // 3) Try episode id as proxy (if your model maps episode -> show elsewhere)
+    const episodeId = (
+      item?.episode_id ??
+      item?.episodeId ??
+      item?.data?.episode_id ??
+      item?.data?.episodeId ??
+      item?.episode?.id ??
+      null
+    );
+    if (episodeId != null && episodeId !== '') {
+      console.log('[FullScreenVideo] using episodeId as fallback showId:', episodeId);
+      return Number(episodeId);
+    }
+
+    // 4) URL query (?showId=123)
+    try {
+      const u = new URL(window.location.href);
+      const qs = u.searchParams.get('showId');
+      if (qs) {
+        console.log('[FullScreenVideo] showId via query param:', qs);
+        return Number(qs);
+      }
+    } catch {}
+
+    // 5) URL pathname patterns: /shows/123, /show/123, /rundown/456/show/123
+    try {
+      const path = window.location.pathname || '';
+      const patterns = [
+        /\bshows\/(\d+)\b/i,
+        /\bshow\/(\d+)\b/i,
+        /\brundown\/(\d+)\/show\/(\d+)\b/i,
+        /\bepisodes?\/(\d+)\/show\/(\d+)\b/i,
+      ];
+      for (const rx of patterns) {
+        const m = path.match(rx);
+        if (m) {
+          const id = Number(m[m.length - 1]);
+          if (!Number.isNaN(id)) {
+            console.log('[FullScreenVideo] showId via pathname match:', id, 'from', path);
+            return id;
+          }
+        }
+      }
+    } catch {}
+
+    // 6) window globals commonly set by the app
+    try {
+      const g = window || {};
+      const fromGlobal =
+        g.__APP_CONTEXT__?.showId ??
+        g.__APP_CONTEXT__?.show?.id ??
+        g.__RUNDOWN__?.show_id ??
+        g.__RUNDOWN__?.showId ??
+        g.__CURRENT_SHOW_ID__ ??
+        null;
+      if (fromGlobal != null && fromGlobal !== '') {
+        console.log('[FullScreenVideo] showId via window global:', fromGlobal);
+        return Number(fromGlobal);
+      }
+    } catch {}
+
+    // 7) LocalStorage fallback used elsewhere in the app
+    try {
+      const ls = localStorage.getItem('currentShowId');
+      if (ls) {
+        console.log('[FullScreenVideo] showId via localStorage:', ls);
+        return Number(ls);
+      }
+    } catch {}
+
+    console.warn('[FullScreenVideo] Unable to resolve showId for MediaPicker. Item snapshot:', item);
+    return null;
+  }
+
+  // Prefer whatever the parent actually passed, under any common key
+  const coerceId = (v) => {
+    if (v === undefined || v === null || v === '') return null;
+    const n = Number(v);
+    return Number.isNaN(n) ? null : n;
+  };
+
+  const propShowId = getShowIdFromProps({ showId, rundown, episode, show, ...rest });
+
+  // Compute resolvedShowId once per render for reuse and remounting
+  const resolvedShowId = propShowId ?? getShowIdFromAnywhere(item);
+
+  // One-time diagnostic log when resolvedShowId changes
+  useEffect(() => {
+    console.log('[FullScreenVideo] incoming props:', { showId, rundown, episode, show, rest });
+    console.log('[FullScreenVideo] derived propShowId =', propShowId, 'final resolvedShowId =', resolvedShowId);
+  }, [showId, rundown, episode, show, JSON.stringify(rest), propShowId, resolvedShowId]);
+
   // Media picker handlers
   const openMediaPicker = () => {
+    if (!resolvedShowId) {
+      console.warn('[FullScreenVideo] MediaPicker blocked: missing showId.');
+      alert('Cannot open media browser: missing show context (showId).');
+      return;
+    }
+    // Debug: log the showId being used for MediaPicker
+    console.log('[FullScreenVideo] Opening MediaPicker with showId =', resolvedShowId);
     setMediaPickerModal({ open: true });
   };
 
@@ -100,14 +273,6 @@ export default function FullScreenVideo({ item, onSave }) {
     closeMediaPicker();
   };
 
-  // Get show ID helper (reused from ObsSceneEditor logic)
-  const getShowIdFromAnywhere = (item) => {
-    return item?.show_id || 
-           item?.showId || 
-           item?.group?.show_id || 
-           item?.group?.showId ||
-           null;
-  };
 
   return (
     <div style={{ 
@@ -346,6 +511,7 @@ export default function FullScreenVideo({ item, onSave }) {
                           objectFit: 'cover'
                         }}
                         muted
+                        preload="metadata"
                       />
                     </div>
 
@@ -565,12 +731,12 @@ export default function FullScreenVideo({ item, onSave }) {
 
       {/* Media Picker Modal */}
       <MediaPicker
-        showId={getShowIdFromAnywhere(item)}
+        key={`media-picker-${resolvedShowId || 'none'}`}
+        showId={resolvedShowId}
         isOpen={mediaPickerModal.open}
         onClose={closeMediaPicker}
         onMediaSelected={handleMediaSelected}
         title="Select Video for Full Screen"
-        typeFilter={['video']} // Only show videos
       />
     </div>
   );

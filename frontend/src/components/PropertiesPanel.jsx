@@ -255,7 +255,8 @@ export default function PropertiesPanel({
             ) : isPresenterNote ? (
               <PresenterNote
                 key={`presenter-${String(selectedItem.id)}`}
-                item={selectedItem}
+                selectedItem={selectedItem}
+                itemData={selectedItem?.data}
                 onSave={async (data) => {
                   const partial = { data };
                   const res = await fetch(`${API_BASE_URL}/api/items/${selectedItem.id}`, {

@@ -60,6 +60,28 @@ class ObsService {
 
   // --- High-level API used by routes ---
 
+  /**
+   * Resolve a scene identifier (UUID or name) to the actual scene name.
+   * Returns the input if it's already a valid scene name, otherwise tries to find by UUID.
+   */
+  async resolveSceneName(sceneIdentifier) {
+    if (!sceneIdentifier) return '';
+    
+    await this.ensureConnected();
+    const { scenes } = await this.obs.call('GetSceneList');
+    
+    // First check if it's already a valid scene name
+    const byName = scenes.find(s => s.sceneName === sceneIdentifier);
+    if (byName) return sceneIdentifier;
+    
+    // Then check if it's a UUID
+    const byUuid = scenes.find(s => s.sceneUuid === sceneIdentifier);
+    if (byUuid) return byUuid.sceneName;
+    
+    // Return as-is if not found (let OBS handle the error)
+    return sceneIdentifier;
+  }
+
   async getVideoSettings() {
     await this.ensureConnected();
     try {
@@ -163,8 +185,9 @@ class ObsService {
     }));
   }
 
-  async getSceneScreenshot(sceneName, { width = 640, height, format = 'png' } = {}) {
+  async getSceneScreenshot(sceneNameOrUuid, { width = 640, height, format = 'png' } = {}) {
     await this.ensureConnected();
+    const sceneName = await this.resolveSceneName(sceneNameOrUuid);
     const { imageData } = await this.obs.call('GetSourceScreenshot', {
       sourceName: sceneName,
       imageFormat: format,
@@ -179,8 +202,9 @@ class ObsService {
    * Placeholders are Color Source inputs whose name does NOT include '#KEEP' (case-insensitive).
    * Sorted top-left to bottom-right.
    */
-  async getScenePlaceholders(sceneName) {
+  async getScenePlaceholders(sceneNameOrUuid) {
     await this.ensureConnected();
+    const sceneName = await this.resolveSceneName(sceneNameOrUuid);
     const { sceneItems } = await this.obs.call('GetSceneItemList', { sceneName });
 
     // Identify color-source placeholders (v3 and legacy), excluding #KEEP (case-insensitive)

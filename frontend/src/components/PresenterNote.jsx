@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { API_BASE_URL } from '../config';
 
 export default function PresenterNoteEditor({ selectedItem, itemData, setRefreshKey }) {
@@ -20,82 +20,203 @@ export default function PresenterNoteEditor({ selectedItem, itemData, setRefresh
     return coerceToObject(blob);
   };
 
+  // Fetch the canonical latest item from the server and hydrate state/refs
+  const fetchLatestAndHydrate = async (id) => {
+    if (!id) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/items/${id}`, { credentials: 'include' });
+      if (!res.ok) return;
+      const json = await res.json().catch(() => null);
+      if (!json || typeof json !== 'object') return;
+
+      const src = json.item && typeof json.item === 'object' ? json.item : json;
+      const raw = Object.prototype.hasOwnProperty.call(src, 'data_blob') ? src.data_blob
+                : Object.prototype.hasOwnProperty.call(src, 'data') ? src.data
+                : {};
+      const parsed = coerceToObject(raw);
+
+      // update refs and local state with the true latest
+      prevBlobSnapshotRef.current = parsed;
+      lastSavedNoteRef.current = parsed.note || '';
+      setNote(parsed.note || '');
+    } catch (e) {
+      console.warn('[PresenterNote] fetchLatestAndHydrate error', e);
+    }
+  };
+
+  // refs for autosave and tracking previous item
+  const lastSavedNoteRef = useRef("");
+  const autosaveTimerRef = useRef(null);
+  const prevItemIdRef = useRef(null);
+  const prevBlobSnapshotRef = useRef({});
+  const isSavingRef = useRef(false);
+
   const [note, setNote] = useState("");
 
   // Keep a stable snapshot of existing blob so we can merge safely
   const existingMemo = useMemo(() => getExistingBlob(), [itemData, selectedItem]);
 
   useEffect(() => {
-    setNote(existingMemo.note || "");
+    setNote(existingMemo.note || ''); // optimistic
+    const id = resolveItemId();
+    fetchLatestAndHydrate(id); // ensure we show the canonical saved value
   }, [existingMemo]);
 
-  const verifyUpdated = (updated) => {
-    const updatedBlob = coerceToObject(updated?.data_blob) ;
-    const updatedData = coerceToObject(updated?.data);
-    return (updatedBlob && updatedBlob.note === note) || (updatedData && updatedData.note === note);
-  };
+  // keep a snapshot of existing blob and the item id for safe save-on-switch
+  useEffect(() => {
+    const currentId = resolveItemId();
+    prevItemIdRef.current = currentId;
+    prevBlobSnapshotRef.current = existingMemo;
+    lastSavedNoteRef.current = existingMemo.note || "";
+  }, [existingMemo]);
 
-  // Save on blur with multi-strategy PATCH to accommodate backend expectations
-  const handleNoteBlur = async () => {
-    const itemId = resolveItemId();
-    if (!itemId) {
+  // Core save function that can target a specific item id and blob snapshot
+  const saveNoteFor = async (targetItemId, noteValue, blobSnapshot) => {
+    if (!targetItemId) {
       console.warn("PresenterNote: missing item id; not saving.", { selectedItem, itemData });
-      return;
+      return false;
     }
 
-    const merged = { ...existingMemo, note: note || "" };
+    const existing = blobSnapshot || existingMemo;
+    const nextMerged = { ...existing, note: noteValue || "" };
 
-    const payloadCandidates = [
-      // 1) Preferred: json column named data_blob
-      { data_blob: merged },
-      // 2) data_blob as string (TEXT column case)
-      { data_blob: JSON.stringify(merged) },
-      // 3) fallback to `data` json column name
-      { data: merged },
-      // 4) `data` as string
-      { data: JSON.stringify(merged) },
-      // 5) send both keys as objects
-      { data_blob: merged, data: merged },
-      // 6) send both as strings
-      { data_blob: JSON.stringify(merged), data: JSON.stringify(merged) },
-    ];
+    // short-circuit if nothing changed against lastSaved
+    if ((lastSavedNoteRef.current || "") === (noteValue || "")) return true;
 
-    for (let i = 0; i < payloadCandidates.length; i++) {
-      const payload = payloadCandidates[i];
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/rundown_items/${itemId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+    const itemUrl = `${API_BASE_URL}/api/items/${targetItemId}`;
 
-        if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          console.warn(`[PresenterNote] PATCH variant ${i+1} failed`, text);
-          continue;
-        }
+    // 1) Fetch the current item to detect the canonical blob key and value type
+    let current;
+    try {
+      const res = await fetch(itemUrl, { credentials: "include" });
+      if (res.ok) current = await res.json().catch(() => null);
+      else console.warn("[PresenterNote] GET item failed; status:", res.status);
+    } catch (e) {
+      console.warn("[PresenterNote] GET item errored:", e);
+    }
 
-        let updated;
-        try { updated = await res.json(); } catch { updated = null; }
-
-        if (!updated) {
-          // If API doesn't return body, consider it success and force a refresh
-          if (typeof setRefreshKey === "function") setRefreshKey((k) => k + 1);
-          return;
-        }
-
-        if (verifyUpdated(updated)) {
-          if (typeof setRefreshKey === "function") setRefreshKey((k) => k + 1);
-          return;
-        }
-        // Try next strategy
-      } catch (err) {
-        console.error(`[PresenterNote] Error on PATCH variant ${i+1}:`, err);
+    let blobKey = "data_blob";
+    let originalBlobValue;
+    if (current && typeof current === "object") {
+      const source = current.item && typeof current.item === "object" ? current.item : current;
+      if (Object.prototype.hasOwnProperty.call(source, "data_blob")) {
+        blobKey = "data_blob";
+        originalBlobValue = source.data_blob;
+      } else if (Object.prototype.hasOwnProperty.call(source, "data")) {
+        blobKey = "data";
+        originalBlobValue = source.data;
       }
     }
 
-    console.error("PresenterNote: all PATCH strategies tried; note may not have been saved.");
+    const sendAsString = typeof originalBlobValue === "string";
+    const payloadValue = sendAsString ? JSON.stringify(nextMerged) : nextMerged;
+    const body = JSON.stringify({ [blobKey]: payloadValue });
+
+    // PATCH first
+    try {
+      const r = await fetch(itemUrl, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body
+      });
+      if (r.ok) {
+        lastSavedNoteRef.current = noteValue || '';
+        // keep local snapshot in sync with what we just saved
+        prevBlobSnapshotRef.current = nextMerged;
+        if (typeof setRefreshKey === 'function') setRefreshKey(k => k + 1);
+        // also rehydrate from server to avoid any stale props
+        fetchLatestAndHydrate(targetItemId);
+        return true;
+      } else {
+        const text = await r.text().catch(() => "");
+        console.warn("[PresenterNote] PATCH failed; will try PUT. Status:", r.status, "Body:", text);
+      }
+    } catch (e) {
+      console.warn("[PresenterNote] PATCH errored; will try PUT:", e);
+    }
+
+    // PUT fallback
+    try {
+      const r2 = await fetch(itemUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body
+      });
+      if (r2.ok) {
+        lastSavedNoteRef.current = noteValue || '';
+        prevBlobSnapshotRef.current = nextMerged;
+        if (typeof setRefreshKey === 'function') setRefreshKey(k => k + 1);
+        fetchLatestAndHydrate(targetItemId);
+        return true;
+      } else {
+        const text = await r2.text().catch(() => "");
+        console.error("[PresenterNote] PUT failed. Status:", r2.status, "Body:", text);
+      }
+    } catch (e) {
+      console.error("[PresenterNote] PUT errored:", e);
+    }
+
+    return false;
   };
+
+  const handleNoteBlur = async () => {
+    const id = resolveItemId();
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    try { await saveNoteFor(id, note, existingMemo); } finally { isSavingRef.current = false; }
+  };
+
+  // Auto-save (debounced) whenever user stops typing for 1s
+  useEffect(() => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    const id = resolveItemId();
+    autosaveTimerRef.current = setTimeout(async () => {
+      if ((lastSavedNoteRef.current || "") !== (note || "")) {
+        await saveNoteFor(id, note, existingMemo);
+      }
+    }, 1000);
+    return () => autosaveTimerRef.current && clearTimeout(autosaveTimerRef.current);
+  }, [note]);
+
+  // Save pending changes when switching to a different rundown item
+  useEffect(() => {
+    const currentId = resolveItemId();
+    return () => { /* on unmount */ };
+  }, []);
+
+  // watch selected item id changes
+  useEffect(() => {
+    const currentId = resolveItemId();
+    const prevId = prevItemIdRef.current;
+    if (prevId && prevId !== currentId) {
+      // flush save for previous item using its snapshot
+      const prevBlob = prevBlobSnapshotRef.current || {};
+      const pending = note; // note belonged to previous item view
+      if ((lastSavedNoteRef.current || '') !== (pending || '')) {
+        saveNoteFor(prevId, pending, prevBlob);
+      }
+    }
+    // update refs to the new item and hydrate latest from server
+    prevItemIdRef.current = currentId;
+    prevBlobSnapshotRef.current = existingMemo;
+    lastSavedNoteRef.current = existingMemo.note || '';
+    fetchLatestAndHydrate(currentId);
+  }, [selectedItem, itemData]);
+
+  // Save on component unmount if there are pending changes
+  useEffect(() => {
+    return () => {
+      const id = prevItemIdRef.current || resolveItemId();
+      const pending = note;
+      if ((lastSavedNoteRef.current || "") !== (pending || "")) {
+        saveNoteFor(id, pending, prevBlobSnapshotRef.current || existingMemo);
+      }
+    };
+  }, []);
+
+  const verifyUpdated = () => true; // kept for backward compatibility; not used in new flow
 
   return (
     <div style={{
@@ -130,6 +251,13 @@ export default function PresenterNoteEditor({ selectedItem, itemData, setRefresh
             value={note}
             onChange={(e) => setNote(e.target.value)}
             onBlur={handleNoteBlur}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                const id = resolveItemId();
+                saveNoteFor(id, note, existingMemo);
+              }
+            }}
             rows={10}
             style={{
               width: '100%',

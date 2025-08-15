@@ -2,10 +2,49 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { API_BASE_URL } from '../config';
 import GraphicsTemplateEditor from './properties/GraphicsTemplateEditor.jsx';
 
+// Helper for graceful image preview fallback
+function PreviewImage({ url, alt, style, fallback }) {
+  const [errored, setErrored] = React.useState(false);
+  if (!url || errored) return fallback || null;
+  return (
+    <img
+      src={url}
+      alt={alt || ''}
+      style={style}
+      loading="lazy"
+      decoding="async"
+      onError={() => setErrored(true)}
+    />
+  );
+}
+
 // Reuse graphics helper from ObsSceneEditor
-function buildGraphicsPreviewUrl(graphic) {
-  if (!graphic?.id) return '';
-  return `${API_BASE_URL}/api/graphics/preview/${graphic.id}`;
+function buildGraphicsPreviewUrl(graphic, cacheBust = false) {
+  if (!graphic) {
+    console.log('[FullScreenGraphic] No graphic provided to buildGraphicsPreviewUrl');
+    return '';
+  }
+  const rawTplId = graphic.templateId || graphic.template_id;
+  if (!rawTplId) {
+    console.log('[FullScreenGraphic] No template ID found in graphic:', graphic);
+    return '';
+  }
+  const tplId = String(rawTplId).replace(/_/g, '-');
+  const dataObj = graphic.templateData || graphic.template_data || {};
+  const q = encodeURIComponent(JSON.stringify(dataObj || {}));
+  let url = `${API_BASE_URL}/api/templates/${encodeURIComponent(tplId)}/screenshot?data=${q}`;
+  if (cacheBust) {
+    url += `&ts=${Date.now()}`; // only when we explicitly want to bypass cache
+  }
+  console.log('[FullScreenGraphic] Generated preview URL:', url, 'for graphic:', graphic);
+  return url;
+}
+
+function getGraphicThumbUrl(graphic, { cacheBustLarge = false } = {}) {
+  if (!graphic) return '';
+  if (graphic.thumb) return graphic.thumb; // use server-provided thumbnail if available
+  // fallback: generate screenshot URL (no cache-bust for lists)
+  return buildGraphicsPreviewUrl(graphic, cacheBustLarge);
 }
 
 function normalizeGraphicRow(raw) {
@@ -15,7 +54,11 @@ function normalizeGraphicRow(raw) {
     type: raw.type || 'Graphic',
     title: raw.title || raw.name || raw.template || 'Untitled',
     summary: raw.summary || '',
-    thumb: raw.thumb || null
+    thumb: raw.thumb || null,
+    template_id: raw.template_id || raw.templateId,
+    template_data: raw.template_data || raw.templateData,
+    templateId: raw.template_id || raw.templateId,
+    templateData: raw.template_data || raw.templateData
   };
 }
 
@@ -80,19 +123,193 @@ export default function FullScreenGraphic({ item, onSave }) {
 
   const transitionNeedsDuration = (t) => t && t.toLowerCase() !== "cut";
 
+  // Returns a numeric episode_id from anywhere we can find it (item or URL query string)
+  const getEpisodeIdFromAnywhere = (item) => {
+    const first =
+      item?.episode_id ??
+      item?.episodeId ??
+      item?.data?.episode_id ??
+      item?.data?.episodeId ??
+      item?.episode?.id ??
+      item?.group?.episode_id ??
+      item?.group?.episodeId ??
+      null;
+    if (first != null && first !== '' && !Number.isNaN(Number(first))) return Number(first);
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      // support both `?episode=` and `?episodeId=`
+      if (sp.has('episode')) return Number(sp.get('episode'));
+      if (sp.has('episodeId')) return Number(sp.get('episodeId'));
+    } catch (_) { /* SSR/no-window safe */ }
+    return null;
+  };
+
   // Graphics modal handlers
+  const createNewGraphic = async () => {
+    try {
+      const episodeId = getEpisodeIdFromAnywhere(item);
+      console.log('[FullScreenGraphic] Resolved episodeId for create:', episodeId, 'from item:', item);
+      if (episodeId == null || Number.isNaN(Number(episodeId))) {
+        throw new Error('No episode_id could be resolved for new graphic');
+      }
+
+      // Capture pre-existing IDs so we can diff if server returns no body
+      const preIds = new Set((gfxList || []).map(r => String(r.id)));
+
+      // Show a temporary state while creating
+      setGfxEditor({ open: true, graphicId: '__PENDING__' });
+
+      const res = await fetch(`${API_BASE_URL}/api/graphics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          episode_id: Number(episodeId),
+          episodeId: Number(episodeId),
+          title: 'Untitled',
+          type: 'lower-third',
+          template_id: 'lower_third_v1',
+          templateId: 'lower_third_v1',
+          template_data: {},
+          templateData: {}
+        })
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Failed to create graphic: ${text || res.status}`);
+      }
+
+      let createdRow = null;
+      let createdId = null;
+
+      // 1) Try Location header first
+      const location = res.headers.get('Location') || res.headers.get('location');
+      if (location) {
+        const parts = location.split('/').filter(Boolean);
+        const last = parts[parts.length - 1];
+        if (last && last !== 'graphics') createdId = decodeURIComponent(last);
+      }
+
+      // 2) Try to parse JSON body if present
+      const ct = res.headers.get('Content-Type') || res.headers.get('content-type') || '';
+      const contentLength = Number(res.headers.get('Content-Length') || res.headers.get('content-length') || 0);
+      try {
+        if (ct.includes('application/json')) {
+          // Some servers return 201 with empty body; guard against that
+          if (contentLength > 0) {
+            const maybe = await res.json();
+            if (maybe && typeof maybe === 'object') {
+              createdRow = maybe;
+              createdId = createdId || maybe.id || maybe.graphic_id || maybe.uuid || null;
+            }
+          } else {
+            // If length is unknown, still try but catch the empty-body error
+            try {
+              const maybe = await res.clone().json();
+              if (maybe && typeof maybe === 'object') {
+                createdRow = maybe;
+                createdId = createdId || maybe.id || maybe.graphic_id || maybe.uuid || null;
+              }
+            } catch (_) { /* empty json body */ }
+          }
+        } else {
+          // 3) Fallback: read text and interpret as id or JSON
+          const txt = (await res.text()).trim();
+          if (txt) {
+            try {
+              const parsed = JSON.parse(txt);
+              if (parsed && typeof parsed === 'object') {
+                createdRow = parsed;
+                createdId = createdId || parsed.id || parsed.graphic_id || parsed.uuid || null;
+              }
+            } catch {
+              // treat as raw id
+              createdId = createdId || txt;
+            }
+          }
+        }
+      } catch (e) {
+        // Swallow JSON parse errors due to empty body; we'll recover via diff below
+        console.warn('[FullScreenGraphic] parse response failed, will attempt fallback', e);
+      }
+
+      // 4) If we only have an id, fetch the row
+      if (!createdRow && createdId) {
+        try {
+          const r2 = await fetch(`${API_BASE_URL}/api/graphics/${encodeURIComponent(createdId)}`);
+          if (r2.ok && (r2.headers.get('Content-Type') || '').includes('application/json')) {
+            createdRow = await r2.json().catch(() => null);
+          }
+        } catch (_) { /* ignore */ }
+      }
+
+      // 5) If we have neither, diff the episode list to find the new row
+      if (!createdRow && !createdId) {
+        try {
+          const r3 = await fetch(`${API_BASE_URL}/api/graphics?episodeId=${encodeURIComponent(Number(episodeId))}`);
+          if (r3.ok) {
+            const ct3 = r3.headers.get('Content-Type') || '';
+            const list = ct3.includes('application/json') ? await r3.json() : [];
+            const rows = Array.isArray(list) ? list : (list?.rows || list?.data || []);
+            const norm = (rows || []).map(normalizeGraphicRow).filter(r => r.id != null);
+
+            // Update our list state so the new item appears immediately
+            if (norm.length) setGfxList(norm);
+
+            // Find the first ID not present before the POST
+            const added = norm.find(r => !preIds.has(String(r.id)));
+            if (added) {
+              createdRow = rows.find(r => (r.id || r.graphic_id || r.uuid) === added.id) || added;
+              createdId = added.id;
+            }
+          }
+        } catch (_) { /* ignore */ }
+      }
+
+      // Normalize and update local state
+      let norm;
+      if (createdRow) {
+        norm = normalizeGraphicRow(createdRow);
+        if (norm.id != null) {
+          setGfxList(prev => {
+            const exists = prev.some(r => r.id === norm.id);
+            return exists ? prev.map(r => (r.id === norm.id ? { ...r, ...norm } : r)) : [norm, ...prev];
+          });
+        }
+      } else if (createdId) {
+        // Construct a minimal norm when only id is known
+        norm = { id: createdId, type: 'Graphic', title: 'Untitled', summary: '', thumb: null };
+        setGfxList(prev => {
+          const exists = prev.some(r => r.id === norm.id);
+          return exists ? prev : [norm, ...prev];
+        });
+      }
+
+      if (!norm || !norm.id) {
+        throw new Error('Graphic was created but no id was returned by the server, and it could not be found in the list.');
+      }
+
+      // Swap the pending editor to the real id (keep the editor OPEN)
+      setGfxEditor({ open: true, graphicId: norm.id });
+    } catch (err) {
+      console.error('[FullScreenGraphic] createNewGraphic error:', err);
+      setGfxError(err?.message || String(err));
+      // Close editor if creation failed
+      setGfxEditor({ open: false, graphicId: null });
+    }
+  };
   const openGraphicsPicker = async () => {
     setGfxError("");
     setGfxLoading(true);
     setGfxPickerModal({ open: true });
     
     try {
-      const episodeId = item?.group?.episode_id || item?.episode_id;
+      const episodeId = getEpisodeIdFromAnywhere(item);
       if (!episodeId) {
         throw new Error("No episode ID found");
       }
       
-      const res = await fetch(`${API_BASE_URL}/api/graphics?episodeId=${episodeId}`);
+      const res = await fetch(`${API_BASE_URL}/api/graphics?episode_id=${episodeId}`);
       if (!res.ok) throw new Error("Failed to fetch graphics");
       
       const data = await res.json();
@@ -124,10 +341,13 @@ export default function FullScreenGraphic({ item, onSave }) {
   };
 
   const openGraphicEditor = (graphic) => {
-    setGfxEditor({
-      open: true,
-      graphicId: graphic?.id || null
-    });
+    const gid = graphic?.id || graphic?.graphic_id || null;
+    if (!gid) {
+      // No id passed — create a new one, then open
+      createNewGraphic();
+      return;
+    }
+    setGfxEditor({ open: true, graphicId: gid });
   };
 
   const closeGraphicEditor = () => {
@@ -274,26 +494,18 @@ export default function FullScreenGraphic({ item, onSave }) {
                 justifyContent: 'center'
               }}>
                 {(() => {
-                  const url = buildGraphicsPreviewUrl(data.selectedGraphic);
-                  return url ? (
-                    <img 
-                      src={url} 
+                  const url = getGraphicThumbUrl(data.selectedGraphic, { cacheBustLarge: false });
+                  return (
+                    <PreviewImage 
+                      url={url}
                       alt="Graphic preview"
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'contain'
-                      }}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      fallback={
+                        <div style={{ color: '#fff', fontSize: 24, fontWeight: 600, textAlign: 'center' }}>
+                          {data.selectedGraphic.title}
+                        </div>
+                      }
                     />
-                  ) : (
-                    <div style={{
-                      color: '#fff',
-                      fontSize: 24,
-                      fontWeight: 600,
-                      textAlign: 'center'
-                    }}>
-                      {data.selectedGraphic.title}
-                    </div>
                   );
                 })()}
               </div>
@@ -386,19 +598,14 @@ export default function FullScreenGraphic({ item, onSave }) {
                       flexShrink: 0
                     }}>
                       {(() => {
-                        const url = buildGraphicsPreviewUrl(data.selectedGraphic);
-                        return url ? (
-                          <img 
-                            src={url} 
+                        const url = getGraphicThumbUrl(data.selectedGraphic);
+                        return (
+                          <PreviewImage
+                            url={url}
                             alt="Graphic preview"
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover'
-                            }}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            fallback={<span style={{ fontSize: 8, color: '#1976d2', fontWeight: 600 }}>GFX</span>}
                           />
-                        ) : (
-                          <span style={{ fontSize: 8, color: '#1976d2', fontWeight: 600 }}>GFX</span>
                         );
                       })()}
                     </div>
@@ -498,6 +705,27 @@ export default function FullScreenGraphic({ item, onSave }) {
                   + Select Graphic
                 </button>
               )}
+              
+              {/* New Graphic Button */}
+              <div style={{ marginTop: 12 }}>
+                <button
+                  onClick={createNewGraphic}
+                  style={{
+                    width: '100%',
+                    background: '#4caf50',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '12px',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textAlign: 'center'
+                  }}
+                >
+                  + New Graphic
+                </button>
+              </div>
             </div>
 
             {/* Notes Section */}
@@ -554,6 +782,29 @@ export default function FullScreenGraphic({ item, onSave }) {
                 Close
               </button>
             </div>
+            
+            {/* New Graphic Button */}
+            <div style={{ padding: '0 16px 16px', borderBottom: '1px solid #e1e6ec' }}>
+              <button
+                onClick={createNewGraphic}
+                style={{
+                  background: "#4caf50",
+                  border: "none",
+                  color: "white",
+                  borderRadius: 8,
+                  padding: "8px 16px",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8
+                }}
+              >
+                + New Graphic
+              </button>
+            </div>
+            
             {gfxLoading && <div style={{ color: '#777', fontStyle: 'italic', padding: 16, textAlign: 'center' }}>Loading…</div>}
             {gfxError && <div style={{ color: '#d32f2f', marginBottom: 12, padding: 12, background: '#ffebee', border: '1px solid #ffcdd2', borderRadius: 6 }}>{gfxError}</div>}
             {!gfxLoading && !gfxError && gfxList.length === 0 && (
@@ -579,19 +830,14 @@ export default function FullScreenGraphic({ item, onSave }) {
                   >
                     <div style={{ width: 120, height: 68, background: '#f5f5f5', borderRadius: 4, overflow: 'hidden', border: '1px solid #ddd' }}>
                       {(() => {
-                        const url = buildGraphicsPreviewUrl(row);
-                        return url ? (
-                          <img 
-                            src={url} 
+                        const url = getGraphicThumbUrl(row);
+                        return (
+                          <PreviewImage
+                            url={url}
                             alt="Graphic preview"
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover'
-                            }}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 10, color: '#999' }}>No preview</div>}
                           />
-                        ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 10, color: '#999' }}>No preview</div>
                         );
                       })()}
                     </div>
