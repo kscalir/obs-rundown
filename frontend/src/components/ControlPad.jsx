@@ -83,6 +83,14 @@ export default function ControlPad({
           color: button.stopped ? '#fff' : '#f44336',
           fontSize: `${14 * controlPadZoom}px`
         };
+      case 'pause':
+        return {
+          ...baseStyle,
+          background: button.paused ? '#ff9800' : '#fff',
+          borderColor: '#ff9800',
+          color: button.paused ? '#fff' : '#ff9800',
+          fontSize: `${14 * controlPadZoom}px`
+        };
       case 'next':
         return {
           ...baseStyle,

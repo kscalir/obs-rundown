@@ -5,6 +5,7 @@ const obsService = require('../../services/obs');
 /**
  * OBS Routes
  * - GET  /api/obs/scenes                      -> list scenes
+ * - GET  /api/obs/transitions                 -> list available transitions
  * - GET  /api/obs/sources?scene=NAME          -> list sources in a scene (query)
  * - GET  /api/obs/sources/:sceneName          -> list sources in a scene (path)
  * - GET  /api/obs/placeholders?scene=NAME     -> list placeholder boxes in scene
@@ -14,6 +15,16 @@ const obsService = require('../../services/obs');
  * - POST /api/obs/replace-placeholders        -> replace placeholders (body: { sceneName, mappings })
  * - POST /api/obs/overlay/ensure              -> attach/detach overlay into a scene (body: { sceneName, attach })
  */
+
+// GET /api/obs/transitions - List all available transitions
+router.get('/transitions', async (req, res) => {
+  try {
+    const { transitions, currentTransition } = await obsService.getTransitions();
+    res.json({ transitions, currentTransition });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/obs/scenes - List all scenes
 router.get('/scenes', async (req, res) => {

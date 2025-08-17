@@ -52,7 +52,10 @@ const renderControlPad = () => {
 
 // Listen for updates from main window
 window.addEventListener('message', (event) => {
+  console.log('Control pad received message:', event.data.type);
   if (event.data.type === 'UPDATE_CONTROL_PAD') {
+    console.log('Updating control pad with buttons:', event.data.buttons?.length, 'buttons');
+    console.log('First few buttons:', event.data.buttons?.slice(0, 4));
     controlPadState = {
       ...controlPadState,
       buttons: event.data.buttons,

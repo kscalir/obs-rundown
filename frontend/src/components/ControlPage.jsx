@@ -3,6 +3,7 @@ import { API_BASE_URL } from '../config';
 import { useSelection } from '../selection/SelectionContext.jsx';
 import { createApi } from '../api/client.js';
 import { useEpisodes } from '../hooks/useEpisodes.js';
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function ControlPage({ showId }) {
   // API client (memoized to prevent re-creation)
@@ -83,35 +84,79 @@ export default function ControlPage({ showId }) {
   // Ref for rundown container for auto-scrolling
   const rundownContainerRef = useRef(null);
   
-  // Control pad zoom state (0.5 to 1.5 scale)
-  const [controlPadZoom, setControlPadZoom] = useState(1.0);
+  // QR code modal state
+  const [qrModalOpen, setQrModalOpen] = useState(false);
   
-  // Popup control surface state
-  const [popupOpen, setPopupOpen] = useState(false);
+  // State for local IP detection
+  const [localIP, setLocalIP] = useState(null);
   
-  // Open control surface popup
-  const openControlSurface = () => {
-    const popup = window.open('/control-surface', 'ControlSurface', 'width=900,height=700,resizable=yes');
-    if (popup) {
-      setPopupOpen(true);
-      
-      // Monitor popup closure
-      const checkClosed = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(checkClosed);
-          setPopupOpen(false);
-        }
-      }, 1000);
+  // Get control surface URL with IP address for network access
+  const getControlSurfaceUrl = () => {
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    const port = window.location.port;
+    
+    // If already accessing via IP or external hostname, use that
+    // Otherwise, try to detect the local IP
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      // Already using an IP or hostname that works externally
+      return `${protocol}//${hostname}${port ? ':' + port : ''}/control-surface`;
     }
+    
+    // For localhost, we need to get the actual network IP
+    // Use detected IP if available, otherwise fallback to hostname
+    const hostToUse = localIP || hostname;
+    return `${protocol}//${hostToUse}${port ? ':' + port : ''}/control-surface`;
   };
   
+  // Detect local IP on component mount
+  useEffect(() => {
+    const detectLocalIP = async () => {
+      try {
+        // Try to get IP from backend using fetch directly
+        const response = await fetch(`${API_BASE_URL}/api/system/ip`);
+        const data = await response.json();
+        console.log('IP detection response:', data);
+        if (data.ip) {
+          setLocalIP(data.ip);
+          console.log('Local IP set to:', data.ip);
+        }
+      } catch (err) {
+        console.error('Error fetching IP from backend:', err);
+        // Fallback: try to detect from WebRTC
+        try {
+          const pc = new RTCPeerConnection({ iceServers: [] });
+          pc.createDataChannel('');
+          pc.createOffer().then(offer => pc.setLocalDescription(offer));
+          
+          pc.onicecandidate = (event) => {
+            if (!event || !event.candidate || !event.candidate.candidate) return;
+            const candidate = event.candidate.candidate;
+            const ipMatch = /([0-9]{1,3}\.){3}[0-9]{1,3}/.exec(candidate);
+            if (ipMatch && ipMatch[0] && !ipMatch[0].startsWith('127.')) {
+              console.log('WebRTC detected IP:', ipMatch[0]);
+              setLocalIP(ipMatch[0]);
+              pc.close();
+            }
+          };
+          
+          // Timeout fallback
+          setTimeout(() => pc.close(), 1000);
+        } catch (e) {
+          console.log('Could not detect local IP via WebRTC');
+        }
+      }
+    };
+    
+    detectLocalIP();
+  }, []);
   
   
-  // Sync essential state to localStorage for popup
+  
+  // Sync essential state to localStorage for control surface
   useEffect(() => {
     const essentialState = {
       executionState,
-      controlPadZoom,
       selectedEpisodeId: selectedEpisode?.id,
       segments: segments || [],
       currentEpisode: currentEpisode,
@@ -124,17 +169,7 @@ export default function ControlPage({ showId }) {
     } catch (error) {
       console.error('Error saving control surface state:', error);
     }
-  }, [executionState, controlPadZoom, selectedEpisode?.id, segments, currentEpisode]);
-  
-  // Calculate the actual height needed for the control pad
-  const controlPadHeight = useMemo(() => {
-    const buttonHeight = 80 * controlPadZoom;
-    const totalButtonRows = 4; // Fixed value since we know the grid size
-    const rowGaps = (totalButtonRows - 1) * 4 * controlPadZoom;
-    const containerPadding = 120; // Increased from 32 to 50 for more space
-    const borderHeight = 2; // top border
-    return buttonHeight * totalButtonRows + rowGaps + containerPadding + borderHeight;
-  }, [controlPadZoom]);
+  }, [executionState, selectedEpisode?.id, segments, currentEpisode]);
   
   // Smooth scroll function with easing
   const smoothScrollToItem = (itemId, offset = 20) => {
@@ -381,6 +416,114 @@ export default function ControlPage({ showId }) {
   // Store auto-advance callback in a ref to avoid stale closure
   const autoAdvanceRef = useRef(null);
   
+  // Store handler in ref for popup access
+  const handleButtonClickRef = useRef(null);
+  
+  // Listen for actions from control surface - MUST be defined before any returns
+  useEffect(() => {
+    console.log('Setting up control surface listener...');
+    
+    // WebSocket for reliable communication
+    let ws = null;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws?control=true`;
+    
+    try {
+      ws = new WebSocket(wsUrl);
+      console.log('Connecting to WebSocket:', wsUrl);
+      
+      ws.onopen = () => {
+        console.log('WebSocket connected for control surface');
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('Received WebSocket message:', data);
+          
+          if (data.type === 'CONTROL_ACTION' && data.button && handleButtonClickRef.current) {
+            handleButtonClickRef.current(data.button);
+            console.log('Button click handled via WebSocket');
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+      
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+      
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+      };
+    } catch (error) {
+      console.error('Failed to create WebSocket:', error);
+    }
+    
+    // Fallback: Poll localStorage for cross-device communication
+    let lastActionTimestamp = 0;
+    let pollCount = 0;
+    const checkActions = () => {
+      try {
+        pollCount++;
+        if (pollCount % 50 === 0) { // Log every 5 seconds (50 * 100ms)
+          console.log('Polling localStorage... count:', pollCount);
+        }
+        
+        const storedAction = localStorage.getItem('controlSurfaceAction');
+        if (storedAction) {
+          const action = JSON.parse(storedAction);
+          console.log('Found in localStorage:', action, 'lastTimestamp:', lastActionTimestamp);
+          
+          // Check if this is a new action we haven't processed yet
+          if (action.type === 'BUTTON_CLICK' && 
+              action.timestamp > lastActionTimestamp && 
+              Date.now() - action.timestamp < 5000) {
+            console.log('Processing button click from localStorage:', action.button);
+            lastActionTimestamp = action.timestamp;
+            
+            // Use the ref to call the function
+            if (handleButtonClickRef.current) {
+              handleButtonClickRef.current(action.button);
+              console.log('Button click handled via localStorage');
+            } else {
+              console.log('handleButtonClickRef.current is null');
+            }
+          } else {
+            if (action.timestamp <= lastActionTimestamp) {
+              console.log('Skipping old action');
+            }
+            if (Date.now() - action.timestamp >= 5000) {
+              console.log('Skipping expired action');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error processing localStorage action:', error);
+      }
+    };
+    
+    // Check for actions every 100ms
+    const interval = setInterval(checkActions, 100);
+    
+    // Also listen for storage events (works when control surface is in different tab)
+    const handleStorageChange = (e) => {
+      if (e.key === 'controlSurfaceAction') {
+        checkActions();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+  
   // Find current item for timer - memoized to avoid re-running effect
   const currentItemForTimer = useMemo(() => {
     if (!executionState.currentItemId) return null;
@@ -548,34 +691,6 @@ export default function ControlPage({ showId }) {
     { name: 'Stinger', type: 'stinger' }
   ];
   
-  // handleButtonClick will be defined later, but we need this useEffect before early returns
-  // Create a ref to store the function so it can be updated
-  const handleButtonClickRef = useRef(null);
-  
-  // Listen for actions from popup - MUST be before any early returns to maintain hook order
-  useEffect(() => {
-    const checkActions = () => {
-      try {
-        const storedAction = localStorage.getItem('controlSurfaceAction');
-        if (storedAction) {
-          const action = JSON.parse(storedAction);
-          if (action.type === 'BUTTON_CLICK' && Date.now() - action.timestamp < 5000) {
-            // Use the ref to call the function
-            if (handleButtonClickRef.current) {
-              handleButtonClickRef.current(action.button);
-            }
-            localStorage.removeItem('controlSurfaceAction'); // Clear after processing
-          }
-        }
-      } catch (error) {
-        console.error('Error processing popup action:', error);
-      }
-    };
-    
-    const interval = setInterval(checkActions, 100);
-    return () => clearInterval(interval);
-  }, []);
-
   if (loading) {
     return (
       <div style={{
@@ -626,159 +741,6 @@ export default function ControlPage({ showId }) {
       </div>
     );
   }
-
-  // Create button grid - calculate how many buttons we need and arrange them
-  const createButtonGrid = () => {
-    const buttonsPerRow = 8; // Streamdeck-style grid
-    const totalRows = 4; // Adjustable height
-    const totalButtons = buttonsPerRow * totalRows;
-    
-    
-    const buttons = [];
-    
-    // Fill manual buttons starting from top-left
-    let buttonIndex = 0;
-    currentManualButtons.forEach((manualButton) => {
-      if (buttonIndex < totalButtons - buttonsPerRow) { // Leave bottom row for controls
-        buttons[buttonIndex] = {
-          type: 'manual',
-          content: manualButton.title || manualButton.type || 'Manual Item',
-          data: manualButton,
-          active: true,
-          armed: executionState.armedManualItem === manualButton // Check if this manual item is armed
-        };
-        buttonIndex++;
-      }
-    });
-    
-    // Fill transition buttons in bottom row (left to right before PAUSE and NEXT)
-    const bottomRowStart = totalButtons - buttonsPerRow;
-    let transitionIndex = 1; // Start at position 1 (STOP is at 0)
-    availableTransitions.forEach((transition) => {
-      if (transitionIndex < buttonsPerRow - 2) { // Leave space for PAUSE and NEXT
-        buttons[bottomRowStart + transitionIndex] = {
-          type: 'transition',
-          content: transition.name,
-          data: transition,
-          active: true,
-          armed: executionState.armedTransition === transition.type
-        };
-        transitionIndex++;
-      }
-    });
-    
-    // STOP button - bottom left
-    buttons[bottomRowStart] = {
-      type: 'stop',
-      content: executionState.stopped ? 'STOPPED' : 'STOP',
-      active: true,
-      danger: true
-    };
-    
-    // PAUSE button - second from right
-    buttons[totalButtons - 2] = {
-      type: 'pause',
-      content: executionState.paused ? 'PAUSED' : 'PAUSE',
-      active: true,
-      warning: true
-    };
-    
-    // NEXT button - bottom right
-    buttons[totalButtons - 1] = {
-      type: 'next',
-      content: 'NEXT',
-      active: true,
-      primary: true
-    };
-    
-    // Fill empty slots
-    for (let i = 0; i < totalButtons; i++) {
-      if (!buttons[i]) {
-        buttons[i] = { type: 'empty', content: '', active: false };
-      }
-    }
-    
-    return { buttons, buttonsPerRow, totalRows };
-  };
-
-  const { buttons, buttonsPerRow, totalRows } = createButtonGrid();
-
-  const getButtonStyle = (button) => {
-    const baseStyle = {
-      width: '100%',
-      height: `${80 * controlPadZoom}px`,
-      border: `${2 * controlPadZoom}px solid`,
-      borderRadius: `${8 * controlPadZoom}px`,
-      fontSize: `${12 * controlPadZoom}px`,
-      fontWeight: '600',
-      cursor: button.active ? 'pointer' : 'default',
-      transition: 'all 0.15s',
-      textAlign: 'center',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      wordWrap: 'break-word',
-      padding: `${8 * controlPadZoom}px`
-    };
-
-    if (!button.active) {
-      // Empty/inactive button
-      return {
-        ...baseStyle,
-        background: '#f8f9fa',
-        borderColor: '#e9ecef',
-        color: '#adb5bd',
-        cursor: 'default'
-      };
-    }
-
-    switch (button.type) {
-      case 'manual':
-        return {
-          ...baseStyle,
-          background: button.armed ? '#fff3cd' : '#fff',
-          borderColor: button.armed ? '#ff9800' : '#2196f3',
-          color: button.armed ? '#f57c00' : '#2196f3',
-          fontSize: `${18 * controlPadZoom}px`
-        };
-      case 'transition':
-        return {
-          ...baseStyle,
-          background: button.armed ? '#fff3cd' : '#fff',
-          borderColor: button.armed ? '#ff9800' : '#6c757d',
-          color: button.armed ? '#f57c00' : '#6c757d',
-          fontSize: `${18 * controlPadZoom}px`
-        };
-      case 'stop':
-        return {
-          ...baseStyle,
-          background: executionState.stopped ? '#f44336' : '#fff',
-          borderColor: '#f44336',
-          color: executionState.stopped ? '#fff' : '#f44336',
-          fontSize: '14px'
-        };
-      case 'pause':
-        return {
-          ...baseStyle,
-          background: executionState.paused ? '#ff9800' : '#fff',
-          borderColor: '#ff9800',
-          color: executionState.paused ? '#fff' : '#ff9800',
-          fontSize: '14px',
-          fontWeight: '600'
-        };
-      case 'next':
-        return {
-          ...baseStyle,
-          background: '#4caf50',
-          borderColor: '#4caf50',
-          color: '#fff',
-          fontSize: '16px',
-          fontWeight: '700'
-        };
-      default:
-        return baseStyle;
-    }
-  };
 
   // Helper function to find next actionable item (skip manual blocks and presenter notes)
   const findNextActionableItem = (currentIndex) => {
@@ -1076,6 +1038,7 @@ export default function ControlPage({ showId }) {
     }
   };
 
+  // Handle button clicks from control surface
   const handleButtonClick = (button) => {
     if (!button.active) return;
     
@@ -1098,10 +1061,8 @@ export default function ControlPage({ showId }) {
     }
   };
   
-  // Update the ref so the popup listener can use it
+  // Update refs with current functions
   handleButtonClickRef.current = handleButtonClick;
-  
-  // Update auto-advance ref
   autoAdvanceRef.current = executeNext;
   
   // Format elapsed time as MM:SS
@@ -1224,33 +1185,32 @@ export default function ControlPage({ showId }) {
           Show {showId} • Episode {currentEpisode?.id || episodeId || 'None'}
         </h1>
         <button
-          onClick={openControlSurface}
-          disabled={popupOpen}
+          onClick={() => setQrModalOpen(true)}
           style={{
-            background: popupOpen ? '#888' : '#4caf50',
+            background: '#4caf50',
             border: 'none',
             borderRadius: '4px',
             color: '#fff',
             padding: '6px 12px',
             fontSize: '12px',
             fontWeight: '600',
-            cursor: popupOpen ? 'default' : 'pointer',
+            cursor: 'pointer',
             transition: 'background-color 0.2s'
           }}
           onMouseEnter={(e) => {
-            if (!popupOpen) e.target.style.backgroundColor = '#45a049';
+            e.target.style.backgroundColor = '#45a049';
           }}
           onMouseLeave={(e) => {
-            if (!popupOpen) e.target.style.backgroundColor = '#4caf50';
+            e.target.style.backgroundColor = '#4caf50';
           }}
         >
-          🎛️ {popupOpen ? 'Control Surface Open' : 'Open Control Surface'}
+          📱 Control Surface
         </button>
       </div>
 
       {/* Main content area with two columns */}
       <div style={{
-        height: popupOpen ? 'calc(100vh - 40px)' : `calc(100vh - 40px - ${controlPadHeight}px)`,
+        height: 'calc(100vh - 40px)',
         display: 'flex',
         background: '#f5f5f5',
         width: '100%',
@@ -2012,15 +1972,22 @@ export default function ControlPage({ showId }) {
         {/* Right column - Time and Notes Panel */}
         <div style={{
           width: '35%',
+          height: '100%',
           background: '#fff',
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: '16px',
           boxSizing: 'border-box',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '16px'
+          flexDirection: 'column'
         }}>
+          {/* Scrollable content area */}
+          <div style={{
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
           {/* Clock Display */}
           <div style={{
             background: '#2c2c2c',
@@ -2252,7 +2219,6 @@ export default function ControlPage({ showId }) {
           
           {/* Presenter Notes */}
           <div style={{
-            flex: 1,
             background: '#f8f8f8',
             borderRadius: '8px',
             padding: '16px',
@@ -2291,100 +2257,204 @@ export default function ControlPage({ showId }) {
               );
             })()}
           </div>
-        </div>
-      </div>
-
-      {/* Control surface - streamdeck style button grid */}
-      {!popupOpen && (
-        <div style={{
-          background: '#2c2c2c',
-          padding: '16px',
-          borderTop: '2px solid #444',
-          flexShrink: 0,
-          height: `${controlPadHeight}px`,
-          overflow: 'hidden'
-        }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${buttonsPerRow}, ${80 * controlPadZoom}px)`,
-          gridTemplateRows: `repeat(${totalRows}, ${80 * controlPadZoom}px)`,
-          rowGap: `${3 * controlPadZoom}px`,
-          columnGap: `${6 * controlPadZoom}px`,
-          maxWidth: '1000px',
-          margin: '0 auto',
-          justifyContent: 'center'
-        }}>
-          {buttons.map((button, index) => (
+          
+          {/* Quick Access Buttons */}
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginTop: '16px'
+          }}>
+            {/* STOP Button */}
             <button
-              key={index}
-              style={getButtonStyle(button, index)}
-              onClick={() => handleButtonClick(button)}
-              onMouseEnter={(e) => {
-                if (button.active && button.type !== 'stop' && button.type !== 'next') {
-                  e.currentTarget.style.transform = 'scale(1.05)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1.05)';
+              onClick={() => handleButtonClickRef.current({ type: 'stop', active: true })}
+              style={{
+                width: '80px',
+                height: '80px',
+                background: executionState?.stopped ? '#f44336' : '#fff',
+                border: '2px solid #f44336',
+                borderRadius: '8px',
+                color: executionState?.stopped ? '#fff' : '#f44336',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
               }}
             >
-              {button.content}
+              STOP
             </button>
-          ))}
+            
+            {/* PAUSE Button */}
+            <button
+              onClick={() => handleButtonClickRef.current({ type: 'pause', active: true })}
+              style={{
+                width: '80px',
+                height: '80px',
+                background: executionState?.paused ? '#ff9800' : '#fff',
+                border: '2px solid #ff9800',
+                borderRadius: '8px',
+                color: executionState?.paused ? '#fff' : '#ff9800',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              PAUSE
+            </button>
+            
+            {/* NEXT Button */}
+            <button
+              onClick={() => handleButtonClickRef.current({ type: 'next', active: true })}
+              style={{
+                width: '80px',
+                height: '80px',
+                background: '#4caf50',
+                border: '2px solid #4caf50',
+                borderRadius: '8px',
+                color: '#fff',
+                fontSize: '16px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              NEXT
+            </button>
+          </div>
         </div>
         </div>
-      )}
 
-      {/* Zoom slider - bottom right - only show when control pad is embedded */}
-      {!popupOpen && (
+      {/* QR Code Modal */}
+      {qrModalOpen && (
         <div style={{
           position: 'fixed',
-          bottom: '20px',
-          right: '20px',
-          background: 'rgba(44, 44, 44, 0.9)',
-          padding: '12px 16px',
-          borderRadius: '8px',
-          border: '1px solid #666',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
           display: 'flex',
           alignItems: 'center',
-          gap: '10px',
-          zIndex: 2000,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+          justifyContent: 'center',
+          zIndex: 10000
         }}>
-          <span style={{
-            color: '#fff',
-            fontSize: '12px',
-            fontWeight: '600',
-            minWidth: '35px'
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '32px',
+            maxWidth: '500px',
+            width: '90%',
+            position: 'relative'
           }}>
-            ZOOM
-          </span>
-          <input
-            type="range"
-            min="0.5"
-            max="1.5"
-            step="0.1"
-            value={controlPadZoom}
-            onChange={(e) => setControlPadZoom(parseFloat(e.target.value))}
-            style={{
-              width: '100px',
-              height: '4px',
-              background: '#666',
-              borderRadius: '2px',
-              outline: 'none',
-              cursor: 'pointer'
-            }}
-          />
-          <span style={{
-            color: '#fff',
-            fontSize: '11px',
-            minWidth: '35px',
-            textAlign: 'right'
-          }}>
-            {Math.round(controlPadZoom * 100)}%
-          </span>
+            {/* Close button */}
+            <button
+              onClick={() => setQrModalOpen(false)}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'transparent',
+                border: 'none',
+                fontSize: '24px',
+                cursor: 'pointer',
+                color: '#666'
+              }}
+            >
+              ✕
+            </button>
+            
+            <h2 style={{
+              margin: '0 0 24px 0',
+              fontSize: '24px',
+              fontWeight: '700',
+              textAlign: 'center'
+            }}>
+              Control Surface
+            </h2>
+            
+            {/* QR Code */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              marginBottom: '24px'
+            }}>
+              <QRCodeSVG
+                value={getControlSurfaceUrl()}
+                size={256}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+            
+            {/* URL Display */}
+            <div style={{
+              background: '#f5f5f5',
+              border: '1px solid #ddd',
+              borderRadius: '8px',
+              padding: '12px',
+              marginBottom: '16px',
+              fontFamily: 'monospace',
+              fontSize: '14px',
+              wordBreak: 'break-all',
+              textAlign: 'center'
+            }}>
+              {getControlSurfaceUrl()}
+            </div>
+            
+            {/* Copy Button */}
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(getControlSurfaceUrl());
+                // Show temporary success feedback
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Copied!';
+                btn.style.background = '#4caf50';
+                setTimeout(() => {
+                  btn.textContent = originalText;
+                  btn.style.background = '#2196f3';
+                }, 2000);
+              }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '16px',
+                fontWeight: '600',
+                background: '#2196f3',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+            >
+              Copy URL
+            </button>
+            
+            <p style={{
+              marginTop: '16px',
+              fontSize: '14px',
+              color: '#666',
+              textAlign: 'center',
+              lineHeight: '1.5'
+            }}>
+              Scan the QR code or use the URL to open the control surface on any device
+            </p>
+          </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

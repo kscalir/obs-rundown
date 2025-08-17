@@ -17,6 +17,7 @@ const executionRouter = require('./src/routes/execution'); // New execution stat
 const templateRegistry = require('./services/templateRegistry');
 const graphicsRouter = require('./src/routes/graphics');
 const obsRoutes = require('./src/routes/obsRoutes');
+const systemRouter = require('./src/routes/system'); // System utilities
 const db = require('./services/database');
 
 // Create Express app
@@ -55,6 +56,7 @@ app.use('/api', rundownRouter);
 app.use('/api/graphics', graphicsRouter);
 app.use('/api/media', require('./src/routes/media'));
 app.use('/api/obs', require('./src/routes/obsRoutes'));
+app.use('/api/system', systemRouter);
 
 // Serve static files for uploads
 app.use('/media', express.static(path.join(__dirname, 'media')));
@@ -72,18 +74,49 @@ const wss = new WebSocket.Server({ server });
 // Make WebSocket server globally available
 global.wss = wss;
 
+// Store control surface connections
+const controlConnections = new Set();
+
 // Handle WebSocket connections
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, 'http://localhost');
   const channel = parseInt(url.searchParams.get('channel') || '1');
+  const isControl = url.searchParams.get('control') === 'true';
   
-  console.log(`WebSocket client connected to channel ${channel}`);
+  console.log(`WebSocket client connected to channel ${channel}${isControl ? ' (control)' : ''}`);
   
   // Store channel info on the WebSocket
   ws.channel = channel;
+  ws.isControl = isControl;
+  
+  if (isControl) {
+    controlConnections.add(ws);
+  }
+  
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message);
+      
+      // Handle control surface actions
+      if (data.type === 'CONTROL_ACTION') {
+        console.log('Received control action:', data);
+        // Broadcast to all control connections
+        controlConnections.forEach(client => {
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(data));
+          }
+        });
+      }
+    } catch (error) {
+      console.error('WebSocket message error:', error);
+    }
+  });
   
   ws.on('close', () => {
-    console.log(`WebSocket client disconnected from channel ${channel}`);
+    console.log(`WebSocket client disconnected from channel ${channel}${isControl ? ' (control)' : ''}`);
+    if (isControl) {
+      controlConnections.delete(ws);
+    }
   });
   
   ws.send(JSON.stringify({ type: 'connection', status: 'connected', channel }));

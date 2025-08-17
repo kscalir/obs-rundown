@@ -92,6 +92,17 @@ class ObsService {
     }
   }
 
+  async getTransitions() {
+    await this.ensureConnected();
+    try {
+      const { transitions, currentSceneTransitionName } = await this.obs.call('GetSceneTransitionList');
+      return { transitions, currentTransition: currentSceneTransitionName };
+    } catch (err) {
+      console.error('[ObsService] Error getting transitions:', err);
+      return { transitions: [], currentTransition: null };
+    }
+  }
+
   async getScenes() {
     await this.ensureConnected();
     const { scenes } = await this.obs.call('GetSceneList');
