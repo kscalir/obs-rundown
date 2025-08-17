@@ -14,6 +14,7 @@ router.get('/episodes/:id/segments', (req, res) => {
         episode_id,
         name as title,
         position,
+        allotted_time,
         created_at,
         updated_at
       FROM rundown_segments 

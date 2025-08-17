@@ -2,6 +2,7 @@ import React from "react";
 import MediaTab from "./MediaTab";
 import RundownView from "./RundownView";
 import ShowsHome from "./ShowsHome";
+import ControlPage from "./ControlPage";
 
 // --- Styles ---
 const STYLES = {
@@ -31,6 +32,10 @@ export default function MainPanel({ showId, showName, onDragEnd, onBackToShows, 
       <div style={STYLES.content}>
         {selectedTab === "media" ? (
           <MediaTab showId={showId} onBackToShows={onBackToShows} />
+        ) : selectedTab === "control" ? (
+          <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
+            <ControlPage showId={showId} />
+          </div>
         ) : (
           <RundownView 
             showId={showId} 

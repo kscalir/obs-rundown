@@ -2,6 +2,12 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../services/database');
 
+// Add request logging middleware
+router.use((req, res, next) => {
+  console.log(`[SEGMENTS] ${req.method} ${req.path}`, req.body);
+  next();
+});
+
 // Get all segments
 router.get('/', (req, res) => {
   const sql = `
@@ -10,6 +16,7 @@ router.get('/', (req, res) => {
       episode_id,
       name as title,
       position,
+      allotted_time,
       created_at,
       updated_at
     FROM rundown_segments 
@@ -27,8 +34,13 @@ router.get('/', (req, res) => {
 // Update segment position
 router.patch('/:id', (req, res) => {
   const { id } = req.params;
-  const { title, position } = req.body;
   
+  console.log('PATCH /segments/:id - headers:', req.headers);
+  console.log('PATCH /segments/:id - body:', req.body);
+  
+  const { title, position, allotted_time } = req.body;
+  
+  console.log('allotted_time value:', allotted_time, 'type:', typeof allotted_time);
   
   // Build the update query dynamically
   let updateFields = [];
@@ -42,6 +54,11 @@ router.patch('/:id', (req, res) => {
   if (position !== undefined && position !== null) {
     updateFields.push('position = ?');
     values.push(position);
+  }
+  
+  if (allotted_time !== undefined) {
+    updateFields.push('allotted_time = ?');
+    values.push(allotted_time);
   }
   
   if (updateFields.length === 0) {
@@ -67,6 +84,7 @@ router.patch('/:id', (req, res) => {
         episode_id,
         name as title,
         position,
+        allotted_time,
         created_at,
         updated_at
       FROM rundown_segments 

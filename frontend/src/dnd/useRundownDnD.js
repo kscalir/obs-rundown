@@ -3,6 +3,7 @@
 // Consolidated DnD handlers. No inline DB logic in component.
 // =============================================
 import { useCallback, useRef } from "react";
+import { toast } from "react-toastify";
 
 // tiny debounce
 function debounce(fn, ms) {
@@ -139,6 +140,135 @@ if (
   return;
 }
 
+    // TOOLBOX → MANUAL BLOCK: Add items to Manual Block (check this BEFORE regular toolbox → group)
+    if ((source.droppableId === "toolbox" || source.droppableId === "obs-scenes") && destination.droppableId.startsWith("manual-block-")) {
+      const manualBlockItemId = destination.droppableId.replace("manual-block-", "");
+      
+      // Handle new draggableId format: "toolbox:item:id" or "toolbox:scene:id"
+      const parts = draggableId.includes(":") ? draggableId.split(":") : draggableId.split("-");
+      const isObsScene = (parts.length >= 3 && parts[1] === "scene") || parts[1] === "obsscene";
+      
+      // Handle new FullScreen toolbox items
+      const isFullScreenType = parts.length >= 3 && parts[1] === "item" && 
+        (parts[2] === "fullscreen-graphic" || 
+         parts[2] === "fullscreen-video" || 
+         parts[2] === "fullscreen-youtube" || 
+         parts[2] === "fullscreen-pdfimage");
+      
+      let moduleType, title, data;
+      
+      // Generate same item data as regular toolbox drops
+      if (isObsScene) {
+        moduleType = "obscommand";
+        const sceneName = parts.length >= 4 && parts[1] === "scene" && parts[2] === "name"
+          ? parts.slice(3).join(":") // Get everything after "name" part
+          : parts.length >= 3 && parts[1] === "scene" 
+          ? parts[2].replace(/^name:/, '') 
+          : parts.slice(2).join("-");
+        title = `Switch to Scene: ${sceneName}`;
+        data = { command: "SetCurrentProgramScene", parameters: { sceneName } };
+      } else if (isFullScreenType) {
+        const itemTypeMap = {
+          'fullscreen-graphic': 'FullScreenGraphic',
+          'fullscreen-video': 'FullScreenVideo', 
+          'fullscreen-youtube': 'FullScreenYouTube',
+          'fullscreen-pdfimage': 'FullScreenPdfImage'
+        };
+        moduleType = itemTypeMap[parts[2]] || 'FullScreenGraphic';
+        const typeDisplayNames = {
+          'FullScreenGraphic': 'Graphic',
+          'FullScreenVideo': 'Video', 
+          'FullScreenYouTube': 'YouTube',
+          'FullScreenPdfImage': 'PDF/Image'
+        };
+        title = typeDisplayNames[moduleType] || `New ${moduleType}`;
+        data = {
+          transition: { type: "cut", durationSec: 0 },
+          notes: ""
+        };
+      } else if (parts.length >= 3 && parts[1] === "item" && parts[2] === "audio-cue") {
+        moduleType = "audio-cue";
+        title = "Audio Cue";
+        data = {
+          audioSource: "",
+          on: true,
+          level: 100,
+          fade: false,
+          fadeDuration: 1.0
+        };
+      } else if (parts.length >= 3 && parts[1] === "item" && parts[2] === "presenter-note") {
+        moduleType = "presenter-note";
+        title = "Presenter Note";
+        data = {
+          note: ""
+        };
+      } else {
+        // Prevent Manual Blocks from being nested in Manual Blocks
+        if (parts.length >= 3 && parts[1] === "item" && parts[2] === "manual-block") {
+          toast.warning("Cannot nest Manual Blocks inside other Manual Blocks", {
+            position: "top-right",
+            autoClose: 3000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          });
+          return;
+        }
+        
+        // Legacy handling for other toolbox items
+        moduleType = parts.length >= 3 ? parts[2] : parts[1];
+        title = `New ${moduleType}`;
+        data = {};
+      }
+
+      try {
+        // Create the item object (without saving to database)
+        const newItem = {
+          id: `temp-${Date.now()}-${Math.random()}`, // Temporary ID
+          type: moduleType,
+          title,
+          data
+        };
+
+        // Add the item to the Manual Block's items array
+        setTimeout(() => {
+          setSegments(prevSegments => {
+            return prevSegments.map(seg => {
+              return {
+                ...seg,
+                groups: (seg.groups || []).map(g => {
+                  return {
+                    ...g,
+                    items: (g.items || []).map(item => {
+                      if (String(item.id) === String(manualBlockItemId)) {
+                        // This is the Manual Block - add the new item to its data.items
+                        const currentItems = item.data?.items || [];
+                        const updatedItems = [...currentItems, newItem];
+                        const updatedData = { ...item.data, items: updatedItems };
+                        
+                        // Save the updated Manual Block to database
+                        api.patch(`/api/items/${item.id}`, { data: updatedData }).catch(e => {
+                          console.warn("[update manual block]", e);
+                        });
+                        
+                        return { ...item, data: updatedData };
+                      }
+                      return item;
+                    })
+                  };
+                })
+              };
+            });
+          });
+        }, 0);
+        
+      } catch (e) {
+        console.warn("[add to manual block]", e);
+      }
+      return;
+    }
+
     // ITEMS: created from toolbox → group
     if ((source.droppableId === "toolbox" || source.droppableId === "obs-scenes") && destination.droppableId.startsWith("items-")) {
       const [, segId, groupId] = destination.droppableId.split("-");
@@ -159,7 +289,9 @@ if (
       if (isObsScene) {
         moduleType = "obscommand";
         // Handle both old format (toolbox-obsscene-SceneName) and new format (toolbox:scene:sceneKey)
-        const sceneName = parts.length >= 3 && parts[1] === "scene" 
+        const sceneName = parts.length >= 4 && parts[1] === "scene" && parts[2] === "name"
+          ? parts.slice(3).join(":") // Get everything after "name" part
+          : parts.length >= 3 && parts[1] === "scene" 
           ? parts[2].replace(/^name:/, '') // Remove "name:" prefix if present
           : parts.slice(2).join("-"); // Legacy format
         title = `Switch to Scene: ${sceneName}`;
@@ -174,15 +306,41 @@ if (
         };
         moduleType = itemTypeMap[parts[2]] || 'FullScreenGraphic';
         const typeDisplayNames = {
-          'FullScreenGraphic': 'Full Screen Graphic',
-          'FullScreenVideo': 'Full Screen Video', 
-          'FullScreenYouTube': 'Full Screen YouTube',
-          'FullScreenPdfImage': 'Full Screen PDF/Image'
+          'FullScreenGraphic': 'Graphic',
+          'FullScreenVideo': 'Video', 
+          'FullScreenYouTube': 'YouTube',
+          'FullScreenPdfImage': 'PDF/Image'
         };
         title = typeDisplayNames[moduleType] || `New ${moduleType}`;
         data = {
           transition: { type: "cut", durationSec: 0 },
           notes: ""
+        };
+      } else if (parts.length >= 3 && parts[1] === "item" && parts[2] === "manual-block") {
+        // Handle Manual Block
+        moduleType = "manual-block";
+        title = "Manual Cue Block";
+        data = {
+          transition: { type: "cut", durationSec: 0 },
+          items: []
+        };
+      } else if (parts.length >= 3 && parts[1] === "item" && parts[2] === "audio-cue") {
+        // Handle Audio Cue
+        moduleType = "audio-cue";
+        title = "Audio Cue";
+        data = {
+          audioSource: "",
+          on: true,
+          level: 100,
+          fade: false,
+          fadeDuration: 1.0
+        };
+      } else if (parts.length >= 3 && parts[1] === "item" && parts[2] === "presenter-note") {
+        // Handle Presenter Note
+        moduleType = "presenter-note";
+        title = "Presenter Note";
+        data = {
+          note: ""
         };
       } else {
         // Legacy handling for other toolbox items
@@ -192,13 +350,19 @@ if (
       }
 
       try {
-        const created = await api.post(`/api/items`, {
+        // Add default automation values
+        const itemPayload = {
           type: moduleType,
           group_id: Number(groupId),
           position: destination.index,
           title,
-          data
-        });
+          data,
+          automation_mode: 'manual',  // Default to manual mode
+          automation_duration: 10,     // Default 10 seconds
+          use_media_duration: false    // Default to not using media duration
+        };
+        
+        const created = await api.post(`/api/items`, itemPayload);
 
         const normalized = {
           ...created,
@@ -241,6 +405,7 @@ if (
       }
       return;
     }
+
 
     // ITEMS: reorder within same group
     if (type === "item" && source.droppableId === destination.droppableId && source.droppableId.startsWith("items-")) {

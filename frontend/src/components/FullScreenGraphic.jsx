@@ -60,14 +60,22 @@ function normalizeGraphicRow(raw) {
   };
 }
 
-export default function FullScreenGraphic({ item, onSave }) {
+export default function FullScreenGraphic({ item, segments, onSave }) {
   // Use centralized selection state
   const { episodeId } = useSelection();
   // Data state (matches ObsSceneEditor structure minus slots)
   const [data, setData] = useState({
     transition: { type: "cut", durationSec: 0 },
     selectedGraphic: null,
-    notes: ""
+    notes: "",
+    automation: {
+      mode: "manual", // manual, auto, auto-following
+      waitIn: 1,
+      waitOut: 1,
+      followingMedia: null,
+      inFromStart: 1,
+      displayTime: 1
+    }
   });
 
   // Modal states
@@ -88,7 +96,15 @@ export default function FullScreenGraphic({ item, onSave }) {
     setData({
       transition: itemData.transition || { type: "cut", durationSec: 0 },
       selectedGraphic: itemData.selectedGraphic || null,
-      notes: itemData.notes || ""
+      notes: itemData.notes || "",
+      automation: itemData.automation || {
+        mode: "manual",
+        waitIn: 1,
+        waitOut: 1,
+        followingMedia: null,
+        inFromStart: 1,
+        displayTime: 1
+      }
     });
   }, [item]);
 
@@ -121,6 +137,39 @@ export default function FullScreenGraphic({ item, onSave }) {
   };
 
   const transitionNeedsDuration = (t) => t && t.toLowerCase() !== "cut";
+
+  // Helper to get full screen videos in the same cue as this graphic
+  const getFollowingMediaOptions = useMemo(() => {
+    if (!item?.id || !segments) return [];
+    
+    // Find the cue (group) that contains this item
+    let currentCue = null;
+    for (const segment of segments) {
+      for (const group of (segment.groups || [])) {
+        if ((group.items || []).some(it => String(it.id) === String(item.id))) {
+          currentCue = group;
+          break;
+        }
+      }
+      if (currentCue) break;
+    }
+    
+    if (!currentCue) return [];
+    
+    // Filter for full screen video items in the same cue
+    return (currentCue.items || [])
+      .filter(it => 
+        it.type === 'FullScreenVideo' || 
+        it.type === 'FullScreenYouTube' ||
+        it.type === 'fullscreenvideo' ||
+        it.type === 'fullscreenyoutube'
+      )
+      .map(it => ({
+        id: it.id,
+        title: it.title || it.data?.title || 'Untitled Video',
+        type: it.type
+      }));
+  }, [item?.id, segments]);
 
   // Simplified ID resolution - prioritize centralized state
   const getEpisodeIdFromAnywhere = (item) => {
@@ -217,7 +266,6 @@ export default function FullScreenGraphic({ item, onSave }) {
         }
       } catch (e) {
         // Swallow JSON parse errors due to empty body; we'll recover via diff below
-        console.warn('[FullScreenGraphic] parse response failed, will attempt fallback', e);
       }
 
       // 4) If we only have an id, fetch the row
@@ -276,10 +324,12 @@ export default function FullScreenGraphic({ item, onSave }) {
         throw new Error('Graphic was created but no id was returned by the server, and it could not be found in the list.');
       }
 
+      // Immediately set the newly created graphic as selected in the rundown item
+      setField('selectedGraphic', norm);
+      
       // Swap the pending editor to the real id (keep the editor OPEN)
       setGfxEditor({ open: true, graphicId: norm.id });
     } catch (err) {
-      console.error('[FullScreenGraphic] createNewGraphic error:', err);
       setGfxError(err?.message || String(err));
       // Close editor if creation failed
       setGfxEditor({ open: false, graphicId: null });
@@ -320,9 +370,25 @@ export default function FullScreenGraphic({ item, onSave }) {
     setGfxLoading(false);
   };
 
-  const handleGraphicSelected = (graphic) => {
-    const normalized = normalizeGraphicRow(graphic);
-    setField('selectedGraphic', normalized);
+  const handleGraphicSelected = async (graphic) => {
+    try {
+      // Fetch the full graphic details to ensure we have complete templateData
+      const graphicId = graphic.id || graphic.graphic_id;
+      const res = await fetch(`${API_BASE_URL}/api/graphics/${graphicId}`);
+      if (res.ok) {
+        const fullGraphic = await res.json();
+        const normalized = normalizeGraphicRow(fullGraphic);
+        setField('selectedGraphic', normalized);
+      } else {
+        // Fallback to the graphic data we have
+        const normalized = normalizeGraphicRow(graphic);
+        setField('selectedGraphic', normalized);
+      }
+    } catch (err) {
+      // Fallback to the graphic data we have
+      const normalized = normalizeGraphicRow(graphic);
+      setField('selectedGraphic', normalized);
+    }
     closeGraphicsPicker();
   };
 
@@ -424,6 +490,133 @@ export default function FullScreenGraphic({ item, onSave }) {
               </>
             )}
           </div>
+        </div>
+
+        {/* Automation Controls */}
+        <div style={{
+          marginTop: 16,
+          paddingTop: 16,
+          borderTop: '1px solid #e1e6ec'
+        }}>
+          <label style={{ fontSize: 14, fontWeight: 600, color: '#222', marginBottom: 12, display: 'block' }}>
+            Automation
+          </label>
+          
+          {/* Radio buttons for automation mode */}
+          <div style={{ display: 'flex', gap: 20, marginBottom: 16 }}>
+            {[
+              { value: 'manual', label: 'Manual' },
+              { value: 'auto', label: 'Auto' },
+              { value: 'auto-following', label: 'Auto Following' }
+            ].map(option => (
+              <label key={option.value} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="automationMode"
+                  value={option.value}
+                  checked={data.automation.mode === option.value}
+                  onChange={(e) => setField('automation.mode', e.target.value)}
+                  style={{ margin: 0 }}
+                />
+                <span style={{ fontSize: 14, color: '#222' }}>{option.label}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* Auto mode fields */}
+          {data.automation.mode === 'auto' && (
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: 14, fontWeight: 600, color: '#222' }}>Wait In (s)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={data.automation.waitIn}
+                  onChange={(e) => setField('automation.waitIn', Math.max(1, parseInt(e.target.value) || 1))}
+                  style={{ 
+                    width: 80,
+                    padding: "6px 8px", 
+                    borderRadius: 6, 
+                    border: "1px solid #b1c7e7"
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: 14, fontWeight: 600, color: '#222' }}>Wait Out (s)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={data.automation.waitOut}
+                  onChange={(e) => setField('automation.waitOut', Math.max(1, parseInt(e.target.value) || 1))}
+                  style={{ 
+                    width: 80,
+                    padding: "6px 8px", 
+                    borderRadius: 6, 
+                    border: "1px solid #b1c7e7"
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Auto Following mode fields */}
+          {data.automation.mode === 'auto-following' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: 14, fontWeight: 600, color: '#222', minWidth: 120 }}>Following Media</label>
+                <select
+                  value={data.automation.followingMedia || ''}
+                  onChange={(e) => setField('automation.followingMedia', e.target.value || null)}
+                  style={{ 
+                    flex: 1,
+                    padding: "6px 10px", 
+                    borderRadius: 6, 
+                    border: "1px solid #b1c7e7",
+                    background: "#fff"
+                  }}
+                >
+                  <option value="">Select video...</option>
+                  {getFollowingMediaOptions.map(video => (
+                    <option key={video.id} value={video.id}>
+                      {video.title} ({video.type})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label style={{ fontSize: 14, fontWeight: 600, color: '#222' }}>In from start (s)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={data.automation.inFromStart}
+                    onChange={(e) => setField('automation.inFromStart', Math.max(1, parseInt(e.target.value) || 1))}
+                    style={{ 
+                      width: 80,
+                      padding: "6px 8px", 
+                      borderRadius: 6, 
+                      border: "1px solid #b1c7e7"
+                    }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label style={{ fontSize: 14, fontWeight: 600, color: '#222' }}>Display time (s)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={data.automation.displayTime}
+                    onChange={(e) => setField('automation.displayTime', Math.max(1, parseInt(e.target.value) || 1))}
+                    style={{ 
+                      width: 80,
+                      padding: "6px 8px", 
+                      borderRadius: 6, 
+                      border: "1px solid #b1c7e7"
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -36,7 +36,7 @@ router.get('/:id', (req, res) => {
 // Update item
 router.patch('/:id', (req, res) => {
   const { id } = req.params;
-  const { title, position, data, group_id } = req.body;
+  const { title, position, data, group_id, automation_mode, automation_duration, use_media_duration } = req.body;
   
   
   try {
@@ -77,6 +77,22 @@ router.patch('/:id', (req, res) => {
     if (group_id !== undefined && group_id !== null) {
       updateFields.push('group_id = ?');
       values.push(group_id);
+    }
+    
+    // Add automation fields
+    if (automation_mode !== undefined && automation_mode !== null) {
+      updateFields.push('automation_mode = ?');
+      values.push(automation_mode);
+    }
+    
+    if (automation_duration !== undefined && automation_duration !== null) {
+      updateFields.push('automation_duration = ?');
+      values.push(automation_duration);
+    }
+    
+    if (use_media_duration !== undefined && use_media_duration !== null) {
+      updateFields.push('use_media_duration = ?');
+      values.push(use_media_duration ? 1 : 0);
     }
     
     if (updateFields.length === 0) {
@@ -132,7 +148,7 @@ router.put('/:id', (req, res) => {
 
 // Create item
 router.post('/', (req, res) => {
-  const { type, group_id, position, title, data } = req.body;
+  const { type, group_id, position, title, data, automation_mode, automation_duration, use_media_duration } = req.body;
   
   
   if (!type || !group_id) {
@@ -141,15 +157,18 @@ router.post('/', (req, res) => {
   
   try {
     const sql = `
-      INSERT INTO rundown_items (type, group_id, position, title, data, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO rundown_items (type, group_id, position, title, data, automation_mode, automation_duration, use_media_duration, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `;
     
     const dataJson = data ? JSON.stringify(data) : '{}';
     const itemTitle = title || `New ${type}`;
     const itemPosition = position !== undefined ? position : 0;
+    const autoMode = automation_mode || 'manual';
+    const autoDuration = automation_duration !== undefined ? automation_duration : 10;
+    const useMediaDur = use_media_duration ? 1 : 0;
     
-    const result = db.executeRun(sql, [type, group_id, itemPosition, itemTitle, dataJson]);
+    const result = db.executeRun(sql, [type, group_id, itemPosition, itemTitle, dataJson, autoMode, autoDuration, useMediaDur]);
     
     // Fetch the created item
     const row = db.executeGet('SELECT * FROM rundown_items WHERE id = ?', [result.lastInsertRowid]);

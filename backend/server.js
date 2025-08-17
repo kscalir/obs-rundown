@@ -12,6 +12,8 @@ const templatesRouter = require('./src/routes/templates');
 const segmentsRouter = require('./src/routes/segments');
 const groupsRouter = require('./src/routes/groups');
 const itemsRouter = require('./src/routes/items');
+const itemsV2Router = require('./src/routes/items_v2'); // New enhanced items API
+const executionRouter = require('./src/routes/execution'); // New execution state API
 const templateRegistry = require('./services/templateRegistry');
 const graphicsRouter = require('./src/routes/graphics');
 const obsRoutes = require('./src/routes/obsRoutes');
@@ -47,6 +49,8 @@ app.use('/api/templates', templatesRouter);
 app.use('/api/segments', segmentsRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/items', itemsRouter);
+app.use('/api/v2/items', itemsV2Router); // New enhanced items API with automation support
+app.use('/api/execution', executionRouter); // Execution state management
 app.use('/api', rundownRouter);
 app.use('/api/graphics', graphicsRouter);
 app.use('/api/media', require('./src/routes/media'));

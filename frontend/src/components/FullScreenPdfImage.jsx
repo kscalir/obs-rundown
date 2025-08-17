@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
 import MediaPicker from './MediaPicker.jsx';
+import { useSelection } from '../selection/SelectionContext.jsx';
 
 // Helper to get media URL
 function getMediaUrl(media) {
@@ -20,6 +21,9 @@ function getFileType(media) {
 }
 
 export default function FullScreenPdfImage({ item, onSave }) {
+  // Use centralized selection state
+  const { showId } = useSelection();
+  
   // Data state (matches ObsSceneEditor structure minus slots)
   const [data, setData] = useState({
     transition: { type: "cut", durationSec: 0 },
@@ -44,7 +48,6 @@ export default function FullScreenPdfImage({ item, onSave }) {
     if (!item?.data) return;
     
     const itemData = item.data;
-    console.log('[FullScreenPdfImage] Loading item data:', itemData);
     
     setData({
       transition: itemData.transition || { type: "cut", durationSec: 0 },
@@ -102,18 +105,18 @@ export default function FullScreenPdfImage({ item, onSave }) {
   };
 
   const handleMediaSelected = (media) => {
-    console.log('[FullScreenPdfImage] Media selected:', media);
     setField('selectedMedia', media);
     closeMediaPicker();
   };
 
-  // Get show ID helper (reused from ObsSceneEditor logic)
+  // Simplified show ID resolution - prioritize centralized state
   const getShowIdFromAnywhere = (item) => {
-    return item?.show_id || 
-           item?.showId || 
-           item?.group?.show_id || 
-           item?.group?.showId ||
-           null;
+    // Centralized showId takes priority
+    if (showId != null) return showId;
+    
+    // Simple fallback to item data
+    const fallbackId = item?.show_id ?? item?.showId ?? item?.group?.show_id ?? item?.group?.showId ?? null;
+    return fallbackId;
   };
 
   const isPdf = data.selectedMedia && getFileType(data.selectedMedia) === 'pdf';

@@ -184,6 +184,7 @@ const lastDropAtRef = useRef(0);
   // ----- Inline rename state -----
   const [editing, setEditing] = useState({ type: null, segId: null, groupId: null, itemId: null, value: "" });
   const beginEditSegment = (seg) => setEditing({ type: "segment", segId: seg.id, groupId: null, itemId: null, value: seg.title || "Untitled Segment" });
+  const beginEditSegmentTime = (seg) => setEditing({ type: "segment-time", segId: seg.id, groupId: null, itemId: null, value: seg.allotted_time ? `${Math.floor(seg.allotted_time / 60)}:${(seg.allotted_time % 60).toString().padStart(2, '0')}` : "" });
   const beginEditCue = (segId, g) => setEditing({ type: "cue", segId, groupId: g.id, itemId: null, value: g.title || "Untitled Cue" });
   const beginEditItem = (segId, groupId, it) => setEditing({ type: "item", segId, groupId, itemId: it.id, value: it.title || it.data?.title || "Untitled Item" });
   const cancelEdit = () => setEditing({ type: null, segId: null, groupId: null, itemId: null, value: "" });
@@ -404,6 +405,43 @@ const lastDropAtRef = useRef(0);
   // ----- Rename helpers -----
   async function saveEdit() {
     if (!editing.type) return;
+    
+    // Handle segment time editing separately
+    if (editing.type === "segment-time") {
+      const timeStr = (editing.value || "").trim();
+      let allotted_time = null;
+      if (timeStr) {
+        const parts = timeStr.split(':');
+        if (parts.length === 2) {
+          const mins = parseInt(parts[0]) || 0;
+          const secs = parseInt(parts[1]) || 0;
+          allotted_time = mins * 60 + secs;
+        } else if (parts.length === 1) {
+          // Allow just minutes
+          allotted_time = parseInt(parts[0]) * 60 || null;
+        }
+      }
+      
+      const url = `${API_BASE_URL}/api/segments/${editing.segId}`;
+      console.log('Sending PATCH request to:', url);
+      console.log('With allotted_time:', allotted_time);
+      try {
+        const res = await fetch(url, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ allotted_time })
+        });
+        if (!res.ok) throw new Error(`Update segment time failed: ${res.status} ${await res.text()}`);
+        setSegmentsState(prev => prev.map(s => (s.id === editing.segId ? { ...s, allotted_time } : s)));
+        toast.success("Segment time updated");
+      } catch (err) {
+        console.error(err);
+        toast.error(err.message || "Failed to update segment time");
+      }
+      cancelEdit();
+      return;
+    }
+    
     const title = (editing.value || "").trim();
     if (!title) { cancelEdit(); return; }
 
@@ -478,11 +516,20 @@ const lastDropAtRef = useRef(0);
   }
 
   // Create an item inside a cue at a given position
-  async function apiCreateItem({ groupId, title, type, data, position }) {
+  async function apiCreateItem({ groupId, title, type, data, position, automation_mode, automation_duration, use_media_duration }) {
     const res = await fetch(`${API_BASE_URL}/api/items`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ group_id: groupId, title, type, data, position })
+      body: JSON.stringify({ 
+        group_id: groupId, 
+        title, 
+        type, 
+        data, 
+        position,
+        automation_mode: automation_mode || 'manual',
+        automation_duration: automation_duration || 10,
+        use_media_duration: use_media_duration || false
+      })
     });
     if (!res.ok) throw new Error(`Item create failed: ${res.status} ${await res.text()}`);
     return res.json();
@@ -544,7 +591,10 @@ const lastDropAtRef = useRef(0);
             title: it.title || it.data?.title || "Untitled Item",
             type: it.type,
             data: it.data || {},
-            position: ii
+            position: ii,
+            automation_mode: it.automation_mode || 'manual',
+            automation_duration: it.automation_duration || 10,
+            use_media_duration: it.use_media_duration || false
           });
           // append item in UI
           setSegmentsState(prev => prev.map(s =>
@@ -603,7 +653,10 @@ const lastDropAtRef = useRef(0);
           title: it.title || it.data?.title || "Untitled Item",
           type: it.type,
           data: it.data || {},
-          position: ii
+          position: ii,
+          automation_mode: it.automation_mode || 'manual',
+          automation_duration: it.automation_duration || 10,
+          use_media_duration: it.use_media_duration || false
         });
         setSegmentsState(prev => prev.map(s =>
           s.id === segId
@@ -666,6 +719,103 @@ const lastDropAtRef = useRef(0);
 
   // Selected item
   const [selectedItem, setSelectedItem] = useState(null);
+
+  // Helper function to get display info for nested items
+  const getItemDisplayInfo = (item) => {
+    const typeMap = {
+      'FullScreenGraphic': 'Graphic',
+      'FullScreenVideo': 'Video', 
+      'FullScreenYouTube': 'YouTube',
+      'FullScreenPdfImage': 'PDF/Image',
+      'PresenterNote': 'Presenter Note',
+      'AudioCue': 'Audio Cue',
+      'audio-cue': 'Audio Cue',
+      'presenter-note': 'Presenter Note',
+      'obscommand': 'OBS Scene'
+    };
+    
+    const displayType = typeMap[item.type] || item.type;
+    
+    // For OBS scenes, extract the scene name from the title or data
+    if (item.type === 'obscommand' && item.title) {
+      const sceneName = item.title.replace('Switch to Scene: ', '');
+      return { type: displayType, title: sceneName };
+    }
+    
+    // For other items, show relevant data
+    let title = item.title || '';
+    if (item.data?.selectedGraphic?.title) {
+      title = item.data.selectedGraphic.title;
+    } else if (item.data?.audioSource) {
+      title = item.data.audioSource;
+    } else if (item.data?.note) {
+      title = item.data.note.length > 30 ? item.data.note.substring(0, 30) + '...' : item.data.note;
+    }
+    
+    return { type: displayType, title };
+  };
+
+  // Helper function to generate subtitle for items (starting with Graphics)
+  const getItemSubtitle = (item) => {
+    // Graphics: show templateId - f0
+    if ((item.type === 'FullScreenGraphic' || item.type === 'fullscreengraphic') && item.data?.selectedGraphic) {
+      const graphic = item.data.selectedGraphic;
+      
+      // Get template ID and f0 field
+      const templateId = graphic.templateId || graphic.template_id || graphic.template || 'unknown';
+      const templateData = graphic.templateData || graphic.template_data || {};
+      const f0 = templateData.f0 ? String(templateData.f0).trim() : '';
+      
+      // Simple subtitle: templateId - f0
+      return f0 ? `${templateId} - ${f0}` : templateId;
+    }
+    
+    // Videos: show media title
+    if ((item.type === 'FullScreenVideo' || item.type === 'fullscreenvideo') && item.data?.selectedMedia) {
+      const media = item.data.selectedMedia;
+      const title = media.title || media.name || 'Untitled Video';
+      return title;
+    }
+    
+    // PDF/Images: show media title
+    if ((item.type === 'FullScreenPdfImage' || item.type === 'fullscreenpdfimage') && item.data?.selectedMedia) {
+      const media = item.data.selectedMedia;
+      const title = media.title || media.name || 'Untitled Image';
+      return title;
+    }
+    
+    return null; // No subtitle for other item types
+  };
+
+  // Remove nested item from Manual Block
+  const removeNestedItem = async (manualBlockItem, nestedItemIndex) => {
+    try {
+      const updatedItems = [...(manualBlockItem.data?.items || [])];
+      updatedItems.splice(nestedItemIndex, 1);
+      
+      const updatedData = { ...manualBlockItem.data, items: updatedItems };
+      
+      await api.patch(`/api/items/${manualBlockItem.id}`, { data: updatedData });
+      
+      // Update local state
+      setSegmentsState(prevSegments => {
+        return prevSegments.map(seg => ({
+          ...seg,
+          groups: (seg.groups || []).map(g => ({
+            ...g,
+            items: (g.items || []).map(item => 
+              item.id === manualBlockItem.id 
+                ? { ...item, data: updatedData }
+                : item
+            )
+          }))
+        }));
+      });
+      
+    } catch (e) {
+      console.warn("[remove nested item]", e);
+    }
+  };
 
   // Track which item ids have already been rendered once (to animate only on initial mount)
   const seenItemIdsRef = useRef(new Set());
@@ -887,6 +1037,69 @@ const lastDropAtRef = useRef(0);
                                 {seg.title || "Untitled Segment"}
                               </strong>
                             )}
+                            
+                            {/* Allotted Time Display/Edit */}
+                            <div style={{ 
+                              borderLeft: '2px solid #d0d0d0', 
+                              paddingLeft: '12px',
+                              marginLeft: '12px',
+                              marginRight: '8px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: '2px'
+                            }}>
+                              <span style={{
+                                fontSize: '10px',
+                                color: '#666',
+                                textTransform: 'uppercase',
+                                fontWeight: '600',
+                                letterSpacing: '0.5px'
+                              }}>
+                                Allotted
+                              </span>
+                              {editing.type === "segment-time" && editing.segId === seg.id ? (
+                                <input
+                                  autoFocus
+                                  value={editing.value}
+                                  onChange={e => setEditing(ed => ({ ...ed, value: e.target.value }))}
+                                  onBlur={saveEdit}
+                                  onKeyDown={onEditKeyDown}
+                                  placeholder="MM:SS"
+                                  style={{ 
+                                    width: '60px',
+                                    padding: "4px 6px", 
+                                    border: "1px solid #b1c7e7", 
+                                    borderRadius: 6,
+                                    fontSize: '14px',
+                                    textAlign: 'center'
+                                  }}
+                                />
+                              ) : (
+                                <span
+                                  style={{ 
+                                    cursor: "pointer",
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    background: seg.allotted_time ? '#f0f8ff' : 'transparent',
+                                    color: seg.allotted_time ? '#1976d2' : '#999',
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    minWidth: '60px',
+                                    display: 'inline-block',
+                                    textAlign: 'center'
+                                  }}
+                                  onDoubleClick={() => beginEditSegmentTime(seg)}
+                                  title="Set allotted time (double-click)"
+                                >
+                                  {seg.allotted_time ? 
+                                    `${Math.floor(seg.allotted_time / 60)}:${(seg.allotted_time % 60).toString().padStart(2, '0')}` : 
+                                    '--:--'
+                                  }
+                                </span>
+                              )}
+                            </div>
+                            
                             <IconButton
                               title="Duplicate segment"
                               aria-label="Duplicate segment"
@@ -974,15 +1187,23 @@ const lastDropAtRef = useRef(0);
                                                 <Droppable droppableId={`items-${seg.id}-${g.id}`} type="item">
                                                   {itemsProvided => (
                                                     <ul ref={itemsProvided.innerRef} {...itemsProvided.droppableProps} style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                                                      {(g.items || []).map((it, ii) => (
+                                                      {(g.items || []).map((it, ii) => {
+                                                        // Helper to check if this is a ManualBlock
+                                                        const isManualBlock = it.type === "ManualBlock" || it.type === "manualblock" || it.type === "manual-block" || (it.data && it.data.type === "ManualBlock");
+                                                        // Helper to check if this is a Presenter Note
+                                                        const isPresenterNote = it.type === "PresenterNote" || it.type === "presenter-note" || it.type === "presenternote";
+                                                        
+                                                        return (
                                                         <Draggable key={`item-${it.id}`} draggableId={`item-${it.id}`} index={ii}>
                                                           {(itProvided, itSnapshot) => (
                                                         <li
                                                               ref={itProvided.innerRef}
                                                               {...itProvided.draggableProps}
-                                                              {...itProvided.dragHandleProps}
                                                               data-new={!seenItemIdsRef.current.has(it.id)}
-                                                              onClick={() => setSelectedItem(it.id)}
+                                                              onClick={() => {
+                                                                setSelectedItem(it.id);
+                                                                setUrlItemId(it.id);
+                                                              }}
                                                               onMouseEnter={e => {
                                                                 if (selectedItem !== it.id) {
                                                                   e.currentTarget.style.background = "#f7fbff";
@@ -996,16 +1217,20 @@ const lastDropAtRef = useRef(0);
                                                                 }
                                                               }}
                                                             style={{
-                                                              background: selectedItem === it.id ? "#e9f3ff" : "#fff",
-                                                              border: selectedItem === it.id ? "2px solid #1976d2" : "1px solid #b1c7e7",
+                                                              background: selectedItem === it.id ? "#e9f3ff" : isPresenterNote ? "#e0f2f1" : "#fff",
+                                                              border: selectedItem === it.id ? "2px solid #1976d2" : isPresenterNote ? "2px solid #009688" : "1px solid #b1c7e7",
                                                               borderRadius: 6,
-                                                              padding: "8px 12px",
+                                                              padding: isManualBlock ? "12px" : "8px 12px",
                                                               margin: "6px 0",
+                                                              marginLeft: isPresenterNote ? "40px" : "0",
                                                               display: "flex",
-                                                              alignItems: "center",
+                                                              alignItems: isManualBlock ? "stretch" : "center",
+                                                              flexDirection: isManualBlock ? "column" : "row",
+                                                              minHeight: isManualBlock ? "120px" : "auto",
                                                               transition: "background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, opacity 160ms ease",
                                                               boxShadow: selectedItem === it.id ? "0 2px 8px rgba(25,118,210,0.15)" : "none",
                                                               cursor: "default",
+                                                              position: "relative",
                                                               // Let the library fully control displacement/animation styles (with a soft fade during drop)
                                                               ...getDropStyle(itProvided.draggableProps.style, itSnapshot),
                                                               animation: !seenItemIdsRef.current.has(it.id) ? "itemFadeIn 160ms ease" : undefined
@@ -1015,36 +1240,304 @@ const lastDropAtRef = useRef(0);
                                                               aria-selected={selectedItem === it.id}
                                                               tabIndex={0}
                                                             >
-                                                              <span style={{ marginRight: 8 }}>🎛</span>
-                                                              {editing.type === "item" && editing.itemId === it.id ? (
-                                                                <input
-                                                                  autoFocus
-                                                                  value={editing.value}
-                                                                  onChange={e => setEditing(ed => ({ ...ed, value: e.target.value }))}
-                                                                  onBlur={saveEdit}
-                                                                  onKeyDown={onEditKeyDown}
-                                                                  style={{ padding: "2px 6px", border: "1px solid #b1c7e7", borderRadius: 6, flex: 1 }}
-                                                                  onClick={e => e.stopPropagation()}
-                                                                />
-                                                              ) : (
-                                                                <span
-                                                                  style={{ flex: 1, cursor: "default" }}
-                                                                  onDoubleClick={e => { e.stopPropagation(); beginEditItem(seg.id, g.id, it); }}
-                                                                  title="Rename item (double-click)"
-                                                                >
-                                                                  {it.title || it.data?.title || "Untitled Item"}
-                                                                </span>
+                                                              {/* Visual connector line for presenter notes */}
+                                                              {isPresenterNote && (
+                                                                <div style={{
+                                                                  position: 'absolute',
+                                                                  left: '-25px',
+                                                                  top: '-6px',
+                                                                  width: '20px',
+                                                                  height: '50%',
+                                                                  borderLeft: '2px solid #009688',
+                                                                  borderBottom: '2px solid #009688',
+                                                                  borderBottomLeftRadius: '8px'
+                                                                }} />
                                                               )}
-                                                              <IconButton
-                                                                title="Delete item"
-                                                                aria-label="Delete item"
-                                                                onClick={e => { e.stopPropagation(); deleteItem(it.id); }}
-                                                                style={{ marginLeft: 8 }}
-                                                              >🗑</IconButton>
+                                                              {isManualBlock ? (
+                                                                // Manual Block special rendering - container div handles layout
+                                                                <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+                                                                  {/* Header with title and controls */}
+                                                                  <div style={{ 
+                                                                    display: "flex", 
+                                                                    alignItems: "center", 
+                                                                    marginBottom: "8px",
+                                                                    padding: "4px 0",
+                                                                    borderBottom: "1px solid #e1e6ec"
+                                                                  }}>
+                                                                    <div
+                                                                      {...itProvided.dragHandleProps}
+                                                                      style={{ 
+                                                                        cursor: "grab", 
+                                                                        padding: "2px 6px", 
+                                                                        marginRight: 4,
+                                                                        color: "#666",
+                                                                        fontSize: "14px",
+                                                                        lineHeight: 1,
+                                                                        borderRadius: 3,
+                                                                        display: "flex",
+                                                                        alignItems: "center"
+                                                                      }}
+                                                                      role="button"
+                                                                      aria-label="Drag to reorder Manual Block"
+                                                                      title="Drag to reorder"
+                                                                    >≡</div>
+                                                                    <span style={{ marginRight: 8, fontSize: "16px" }}>📋</span>
+                                                                    {editing.type === "item" && editing.itemId === it.id ? (
+                                                                      <input
+                                                                        autoFocus
+                                                                        value={editing.value}
+                                                                        onChange={e => setEditing(ed => ({ ...ed, value: e.target.value }))}
+                                                                        onBlur={saveEdit}
+                                                                        onKeyDown={onEditKeyDown}
+                                                                        style={{ padding: "2px 6px", border: "1px solid #b1c7e7", borderRadius: 6, flex: 1 }}
+                                                                        onClick={e => e.stopPropagation()}
+                                                                      />
+                                                                    ) : (
+                                                                      <span
+                                                                        style={{ flex: 1, cursor: "default", fontWeight: 600, color: "#1976d2" }}
+                                                                        onDoubleClick={e => { e.stopPropagation(); beginEditItem(seg.id, g.id, it); }}
+                                                                        title="Rename item (double-click)"
+                                                                      >
+                                                                        {it.title || it.data?.title || "Manual Cue Block"}
+                                                                      </span>
+                                                                    )}
+                                                                    <IconButton
+                                                                      title="Delete item"
+                                                                      aria-label="Delete item"
+                                                                      onClick={e => { e.stopPropagation(); deleteItem(it.id); }}
+                                                                      style={{ marginLeft: 8 }}
+                                                                    >🗑</IconButton>
+                                                                  </div>
+                                                                  
+                                                                  {/* Nested items section - completely separate from Droppable */}
+                                                                  {it.data?.items && it.data.items.length > 0 && (
+                                                                    <div style={{ 
+                                                                      marginBottom: "12px",
+                                                                      position: "relative",
+                                                                      zIndex: 1 // Ensure nested items are on top
+                                                                    }}>
+                                                                      <div style={{ 
+                                                                        display: "flex", 
+                                                                        flexDirection: "column", 
+                                                                        gap: "8px"
+                                                                      }}>
+                                                                        {it.data.items.map((nestedItem, index) => {
+                                                                          const displayInfo = getItemDisplayInfo(nestedItem);
+                                                                          const isSelected = String(selectedItem) === String(nestedItem.id);
+                                                                          
+                                                                          return (
+                                                                            <div
+                                                                              key={nestedItem.id || index}
+                                                                              onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setSelectedItem(nestedItem.id);
+                                                                                setUrlItemId(nestedItem.id);
+                                                                              }}
+                                                                              style={{
+                                                                                display: "flex",
+                                                                                alignItems: "center",
+                                                                                justifyContent: "space-between",
+                                                                                padding: "10px 14px",
+                                                                                background: isSelected ? "#e9f3ff" : "#fff",
+                                                                                border: isSelected ? "2px solid #1976d2" : "1px solid #e1e6ec",
+                                                                                borderRadius: 6,
+                                                                                fontSize: "14px",
+                                                                                cursor: "pointer",
+                                                                                transition: "all 200ms ease",
+                                                                                boxShadow: isSelected ? "0 2px 8px rgba(25,118,210,0.15)" : "0 1px 3px rgba(0,0,0,0.1)",
+                                                                                userSelect: "none"
+                                                                              }}
+                                                                              onMouseEnter={(e) => {
+                                                                                if (!isSelected) {
+                                                                                  e.currentTarget.style.background = "#f7fbff";
+                                                                                  e.currentTarget.style.borderColor = "#a9c5e6";
+                                                                                }
+                                                                              }}
+                                                                              onMouseLeave={(e) => {
+                                                                                if (!isSelected) {
+                                                                                  e.currentTarget.style.background = "#fff";
+                                                                                  e.currentTarget.style.borderColor = "#e1e6ec";
+                                                                                }
+                                                                              }}
+                                                                            >
+                                                                              <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
+                                                                                <span style={{
+                                                                                  background: isSelected ? "#1976d2" : "#f0f4f8",
+                                                                                  color: isSelected ? "#fff" : "#666",
+                                                                                  padding: "3px 7px",
+                                                                                  borderRadius: 4,
+                                                                                  fontSize: "11px",
+                                                                                  fontWeight: 600,
+                                                                                  minWidth: "20px",
+                                                                                  textAlign: "center"
+                                                                                }}>
+                                                                                  {index + 1}
+                                                                                </span>
+                                                                                <div style={{ flex: 1 }}>
+                                                                                  <div style={{ 
+                                                                                    fontWeight: 600, 
+                                                                                    color: isSelected ? "#1976d2" : "#222",
+                                                                                    marginBottom: "2px"
+                                                                                  }}>
+                                                                                    {displayInfo.type}
+                                                                                  </div>
+                                                                                  {displayInfo.title && (
+                                                                                    <div style={{ 
+                                                                                      color: isSelected ? "#1565c0" : "#666", 
+                                                                                      fontSize: "12px"
+                                                                                    }}>
+                                                                                      {displayInfo.title}
+                                                                                    </div>
+                                                                                  )}
+                                                                                </div>
+                                                                              </div>
+                                                                              <button
+                                                                                onClick={(e) => {
+                                                                                  e.stopPropagation();
+                                                                                  removeNestedItem(it, index);
+                                                                                }}
+                                                                                style={{
+                                                                                  background: "none",
+                                                                                  border: "none",
+                                                                                  color: "#dc3545",
+                                                                                  cursor: "pointer",
+                                                                                  padding: "6px",
+                                                                                  fontSize: "16px",
+                                                                                  borderRadius: 4,
+                                                                                  display: "flex",
+                                                                                  alignItems: "center",
+                                                                                  justifyContent: "center",
+                                                                                  transition: "background 200ms ease",
+                                                                                  lineHeight: 1
+                                                                                }}
+                                                                                onMouseEnter={(e) => {
+                                                                                  e.currentTarget.style.background = "#fee";
+                                                                                }}
+                                                                                onMouseLeave={(e) => {
+                                                                                  e.currentTarget.style.background = "none";
+                                                                                }}
+                                                                                title="Remove item"
+                                                                              >
+                                                                                ×
+                                                                              </button>
+                                                                            </div>
+                                                                          );
+                                                                        })}
+                                                                      </div>
+                                                                    </div>
+                                                                  )}
+                                                                  
+                                                                  {/* Drop zone area */}
+                                                                  <div style={{ position: "relative", zIndex: 0 }}>
+                                                                    <Droppable droppableId={`manual-block-${it.id}`} type="item">
+                                                                      {(dropProvided, dropSnapshot) => (
+                                                                        <div 
+                                                                          ref={dropProvided.innerRef}
+                                                                          {...dropProvided.droppableProps}
+                                                                          style={
+                                                                            it.data?.items && it.data.items.length > 0 ? {
+                                                                              // Compact drop zone when items exist
+                                                                              border: dropSnapshot.isDraggingOver ? "1px dashed #1976d2" : "1px dashed transparent",
+                                                                              borderRadius: 4,
+                                                                              padding: "6px 12px",
+                                                                              background: dropSnapshot.isDraggingOver ? "#e3f2fd" : "transparent",
+                                                                              display: "flex",
+                                                                              alignItems: "center",
+                                                                              justifyContent: "center",
+                                                                              minHeight: "24px",
+                                                                              transition: "all 200ms ease",
+                                                                              textAlign: "center",
+                                                                              color: dropSnapshot.isDraggingOver ? "#1976d2" : "transparent",
+                                                                              fontSize: "12px",
+                                                                              fontWeight: 500
+                                                                            } : {
+                                                                              // Full drop zone when no items
+                                                                              border: dropSnapshot.isDraggingOver ? "2px dashed #1976d2" : "2px dashed #d4deea",
+                                                                              borderRadius: 6,
+                                                                              padding: "16px",
+                                                                              background: dropSnapshot.isDraggingOver ? "#e3f2fd" : "#fafbfc",
+                                                                              display: "flex",
+                                                                              flexDirection: "column",
+                                                                              alignItems: "center",
+                                                                              justifyContent: "center",
+                                                                              minHeight: "50px",
+                                                                              transition: "all 200ms ease",
+                                                                              textAlign: "center",
+                                                                              color: "#999",
+                                                                              fontSize: "14px"
+                                                                            }
+                                                                          }
+                                                                        >
+                                                                          {it.data?.items && it.data.items.length > 0 ? (
+                                                                            // Compact text for when items exist
+                                                                            dropSnapshot.isDraggingOver && "+ Add item"
+                                                                          ) : (
+                                                                            // Full text for empty Manual Block
+                                                                            <>
+                                                                              Drag items here
+                                                                              <div style={{ fontSize: "12px", marginTop: "4px" }}>
+                                                                                Create manual cue block
+                                                                              </div>
+                                                                            </>
+                                                                          )}
+                                                                          {dropProvided.placeholder}
+                                                                        </div>
+                                                                      )}
+                                                                    </Droppable>
+                                                                  </div>
+                                                                </div>
+                                                              ) : (
+                                                                // Regular item rendering
+                                                                <div {...itProvided.dragHandleProps} style={{ display: "flex", alignItems: "center", width: "100%" }}>
+                                                                  <span style={{ marginRight: 8 }}>🎛</span>
+                                                                  {editing.type === "item" && editing.itemId === it.id ? (
+                                                                    <input
+                                                                      autoFocus
+                                                                      value={editing.value}
+                                                                      onChange={e => setEditing(ed => ({ ...ed, value: e.target.value }))}
+                                                                      onBlur={saveEdit}
+                                                                      onKeyDown={onEditKeyDown}
+                                                                      style={{ padding: "2px 6px", border: "1px solid #b1c7e7", borderRadius: 6, flex: 1 }}
+                                                                      onClick={e => e.stopPropagation()}
+                                                                    />
+                                                                  ) : (
+                                                                    <div
+                                                                      style={{ flex: 1, cursor: "default" }}
+                                                                      onDoubleClick={e => { e.stopPropagation(); beginEditItem(seg.id, g.id, it); }}
+                                                                      title="Rename item (double-click)"
+                                                                    >
+                                                                      <div style={{ fontSize: "inherit", lineHeight: "1.2" }}>
+                                                                        {it.title || it.data?.title || "Untitled Item"}
+                                                                      </div>
+                                                                      {(() => {
+                                                                        const subtitle = getItemSubtitle(it);
+                                                                        return subtitle ? (
+                                                                          <div style={{ 
+                                                                            fontSize: "11px", 
+                                                                            color: "#666", 
+                                                                            lineHeight: "1.3",
+                                                                            marginTop: "2px",
+                                                                            fontWeight: "normal"
+                                                                          }}>
+                                                                            {subtitle}
+                                                                          </div>
+                                                                        ) : null;
+                                                                      })()}
+                                                                    </div>
+                                                                  )}
+                                                                  <IconButton
+                                                                    title="Delete item"
+                                                                    aria-label="Delete item"
+                                                                    onClick={e => { e.stopPropagation(); deleteItem(it.id); }}
+                                                                    style={{ marginLeft: 8 }}
+                                                                  >🗑</IconButton>
+                                                                </div>
+                                                              )}
                                                             </li>
                                                           )}
                                                         </Draggable>
-                                                      ))}
+                                                        );
+                                                      })}
                                                       {itemsProvided.placeholder}
                                                       {(!g.items || g.items.length === 0) && (
                                                         <li style={{ color: "#999", fontStyle: "italic", padding: "6px 0" }}>

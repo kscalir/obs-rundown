@@ -117,9 +117,37 @@ export default function FullScreenVideo({ item, onSave, showId }) {
     setMediaPickerModal({ open: false });
   };
 
-  const handleMediaSelected = (media) => {
+  const handleMediaSelected = async (media) => {
     setField('selectedMedia', media);
     closeMediaPicker();
+    
+    // If we have a video with duration, update the item's automation_duration
+    if (media?.duration && item?.id) {
+      try {
+        // Update the automation_duration in the backend
+        const res = await fetch(`${API_BASE_URL}/api/items/${item.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            automation_duration: Math.ceil(media.duration) // Round up to nearest second
+          })
+        });
+        
+        if (res.ok) {
+          // Notify the parent that the item was updated
+          window.dispatchEvent(
+            new CustomEvent('rundown:item-patched', {
+              detail: { 
+                itemId: item.id, 
+                patch: { automation_duration: Math.ceil(media.duration) }
+              }
+            })
+          );
+        }
+      } catch (err) {
+        console.error('Failed to update automation duration:', err);
+      }
+    }
   };
 
 
@@ -262,6 +290,34 @@ export default function FullScreenVideo({ item, onSave, showId }) {
                   loop={data.mediaProperties.loop}
                   volume={data.mediaProperties.volume}
                   playbackrate={data.mediaProperties.playbackSpeed}
+                  onLoadedMetadata={async (e) => {
+                    const videoDuration = e.target.duration;
+                    if (videoDuration && !isNaN(videoDuration) && item?.id) {
+                      // Update the automation_duration with the actual video duration
+                      try {
+                        const res = await fetch(`${API_BASE_URL}/api/items/${item.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            automation_duration: Math.ceil(videoDuration)
+                          })
+                        });
+                        
+                        if (res.ok) {
+                          window.dispatchEvent(
+                            new CustomEvent('rundown:item-patched', {
+                              detail: { 
+                                itemId: item.id, 
+                                patch: { automation_duration: Math.ceil(videoDuration) }
+                              }
+                            })
+                          );
+                        }
+                      } catch (err) {
+                        console.error('Failed to update automation duration:', err);
+                      }
+                    }
+                  }}
                 />
               </div>
             ) : (
@@ -361,6 +417,34 @@ export default function FullScreenVideo({ item, onSave, showId }) {
                         }}
                         muted
                         preload="metadata"
+                        onLoadedMetadata={async (e) => {
+                          const videoDuration = e.target.duration;
+                          if (videoDuration && !isNaN(videoDuration) && item?.id) {
+                            // Update the automation_duration with the actual video duration
+                            try {
+                              const res = await fetch(`${API_BASE_URL}/api/items/${item.id}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  automation_duration: Math.ceil(videoDuration)
+                                })
+                              });
+                              
+                              if (res.ok) {
+                                window.dispatchEvent(
+                                  new CustomEvent('rundown:item-patched', {
+                                    detail: { 
+                                      itemId: item.id, 
+                                      patch: { automation_duration: Math.ceil(videoDuration) }
+                                    }
+                                  })
+                                );
+                              }
+                            } catch (err) {
+                              console.error('Failed to update automation duration:', err);
+                            }
+                          }
+                        }}
                       />
                     </div>
 

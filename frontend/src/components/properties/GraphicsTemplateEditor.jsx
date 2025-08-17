@@ -109,7 +109,6 @@ export default function GraphicsTemplateEditor({ graphicId, setRefreshKey, onClo
       setLoading(true);
       setError(null);
       try {
-        console.log('[GFX-Editor] Loading graphic:', graphicId);
         const response = await fetch(`${API_BASE_URL}/api/graphics/${graphicId}`);
         if (!response.ok) {
           throw new Error(`Failed to load graphic: ${response.statusText}`);
@@ -121,7 +120,6 @@ export default function GraphicsTemplateEditor({ graphicId, setRefreshKey, onClo
         setTemplateData(data.template_data || {});
         setTitleTouched(false);
       } catch (err) {
-        console.error('[GFX-Editor] Error loading graphic:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -134,14 +132,13 @@ export default function GraphicsTemplateEditor({ graphicId, setRefreshKey, onClo
   useEffect(() => {
     const loadTemplates = async () => {
       try {
-        console.log('[GFX-Editor] Loading templates');
         const response = await fetch(`${API_BASE_URL}/api/templates`);
         if (response.ok) {
           const templatesData = await response.json();
           setTemplates(templatesData);
         }
       } catch (error) {
-        console.error('[GFX-Editor] Error loading templates:', error);
+        // Error loading templates
       }
     };
     loadTemplates();
@@ -156,14 +153,12 @@ export default function GraphicsTemplateEditor({ graphicId, setRefreshKey, onClo
 
     const loadPlaceholders = async () => {
       try {
-        console.log('[GFX-Editor] Loading placeholders for template:', templateId);
         const response = await fetch(`${API_BASE_URL}/api/templates/${templateId}/placeholders`);
         if (response.ok) {
           const placeholdersData = await response.json();
           setPlaceholders(placeholdersData);
         }
       } catch (error) {
-        console.error('[GFX-Editor] Error loading placeholders:', error);
         setPlaceholders([]);
       }
     };
@@ -220,9 +215,14 @@ export default function GraphicsTemplateEditor({ graphicId, setRefreshKey, onClo
       }
       const updated = await response.json();
       setGraphic(updated);
+      
+      // Notify parent component that graphic was saved
+      if (onSaved) {
+        onSaved(updated);
+      }
+      
       return updated;
     } catch (err) {
-      console.error('[GFX-Editor] Error saving (partial) graphic:', err);
       setError(err.message);
       return null;
     } finally {
@@ -233,7 +233,6 @@ export default function GraphicsTemplateEditor({ graphicId, setRefreshKey, onClo
   // Handle template selection change
   const handleTemplateChange = (e) => {
     const newTemplateId = e.target.value || '';
-    console.log('[GFX-Editor] Template changed:', newTemplateId);
     setTemplateId(newTemplateId);
     setTemplateData({}); // Reset template data when changing templates
   };

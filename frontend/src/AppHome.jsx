@@ -197,7 +197,7 @@ function AppInner() {
             padding: "6px 22px",
             fontWeight: selectedTab === "rundown" ? 700 : 500,
             fontSize: 16,
-            marginRight: 0,
+            marginRight: 18,
             marginLeft: 0,
             marginTop: 0,
             marginBottom: 0,
@@ -215,6 +215,36 @@ function AppInner() {
           }}
         >
           Rundown
+        </button>
+        <button
+          onClick={() => handleTabChange("control")}
+          style={{
+            background: selectedTab === "control" ? "#d2e6fa" : "#e3f2fd",
+            color: selectedTab === "control" ? "#1976d2" : "#7c7c7c",
+            border: selectedTab === "control" ? "1.5px solid #1976d2" : "1px solid #b1c7e7",
+            borderBottom: selectedTab === "control" ? "3px solid #1976d2" : "none",
+            borderRadius: 12,
+            padding: "6px 22px",
+            fontWeight: selectedTab === "control" ? 700 : 500,
+            fontSize: 16,
+            marginRight: 0,
+            marginLeft: 0,
+            marginTop: 0,
+            marginBottom: 0,
+            cursor: "pointer",
+            boxShadow: "none",
+            transition: "background 0.15s, border 0.15s"
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = '#d2e6fa';
+            e.currentTarget.style.border = '1.5px solid #1976d2';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = selectedTab === "control" ? '#d2e6fa' : '#e3f2fd';
+            e.currentTarget.style.border = selectedTab === "control" ? '1.5px solid #1976d2' : '1px solid #b1c7e7';
+          }}
+        >
+          Live Control
         </button>
       </div>
       {/* MainPanel only renders the content for the selected tab */}

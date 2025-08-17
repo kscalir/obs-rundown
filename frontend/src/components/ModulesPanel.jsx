@@ -7,28 +7,28 @@ const TOOLBOX_ITEMS = [
   {
     id: 'fullscreen-graphic',
     type: 'FullScreenGraphic',
-    title: 'Full Screen Graphic',
+    title: 'Graphic',
     description: 'Graphics template with transitions',
     icon: 'GFX'
   },
   {
     id: 'fullscreen-video',
     type: 'FullScreenVideo', 
-    title: 'Full Screen Video',
+    title: 'Video',
     description: 'Video player with controls',
     icon: 'VID'
   },
   {
     id: 'fullscreen-youtube',
     type: 'FullScreenYouTube',
-    title: 'Full Screen YouTube',
+    title: 'YouTube',
     description: 'YouTube video with URL input',
     icon: 'YT'
   },
   {
     id: 'fullscreen-pdfimage',
     type: 'FullScreenPdfImage',
-    title: 'Full Screen PDF/Image',
+    title: 'PDF/Image',
     description: 'Images and PDFs with transforms',
     icon: 'IMG'
   },
@@ -45,6 +45,13 @@ const TOOLBOX_ITEMS = [
     title: 'Audio Cue',
     description: 'Automate audio input controls',
     icon: 'AUD'
+  },
+  {
+    id: 'manual-block',
+    type: 'ManualBlock',
+    title: 'Manual Cue Block',
+    description: 'Container for manual cue execution',
+    icon: 'MAN'
   }
 ];
 
@@ -505,10 +512,11 @@ function ModulesPanel({ onModuleSelected }) {
                       }}
                     >
                       {scenes.map((scene, index) => {
-                        const sceneKey = scene.sceneUuid || `name:${scene.sceneName}`;
+                        const sceneKey = `name:${scene.sceneName}`;
+                        const uniqueKey = scene.sceneUuid || sceneKey;
                         return (
                           <Draggable
-                            key={sceneKey}
+                            key={uniqueKey}
                             draggableId={`toolbox:scene:${sceneKey}`}
                             index={index}
                           >

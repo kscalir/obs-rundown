@@ -6,6 +6,7 @@ export function createApi(base = "") {
   const get = (url, opts = {}) => req("GET", url, null, opts);
   const post = (url, body, opts = {}) => req("POST", url, body, opts);
   const patch = (url, body, opts = {}) => req("PATCH", url, body, opts);
+  const put = (url, body, opts = {}) => req("PUT", url, body, opts);
   const del = (url, opts = {}) => req("DELETE", url, null, opts);
 
   async function req(method, url, body, { signal } = {}) {
@@ -23,5 +24,5 @@ export function createApi(base = "") {
     return ct.includes("json") ? r.json() : r.text();
   }
 
-  return { get, post, patch, del };
+  return { get, post, patch, put, del };
 }
