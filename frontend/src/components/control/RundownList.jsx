@@ -1,5 +1,25 @@
 import React, { useRef } from 'react';
 
+// Color palette for manual overlays (must match Overlay.jsx)
+const MANUAL_OVERLAY_COLORS = [
+  { name: 'Red', hex: '#E53935', index: 0 },        // Bright Red
+  { name: 'Blue', hex: '#1E88E5', index: 1 },       // Strong Blue
+  { name: 'Green', hex: '#43A047', index: 2 },      // Forest Green
+  { name: 'Orange', hex: '#FB8C00', index: 3 },     // Vivid Orange
+  { name: 'Purple', hex: '#8E24AA', index: 4 },     // Deep Purple
+  { name: 'Teal', hex: '#00ACC1', index: 5 },       // Cyan/Teal
+  { name: 'Pink', hex: '#D81B60', index: 6 },       // Hot Pink
+  { name: 'Lime', hex: '#7CB342', index: 7 },       // Lime Green
+  { name: 'Indigo', hex: '#3949AB', index: 8 },     // Deep Indigo
+  { name: 'Amber', hex: '#FFB300', index: 9 },      // Golden Amber
+  { name: 'Brown', hex: '#6D4C41', index: 10 },     // Dark Brown
+  { name: 'Navy', hex: '#283593', index: 11 },      // Navy Blue
+  { name: 'Olive', hex: '#558B2F', index: 12 },     // Olive Green
+  { name: 'Maroon', hex: '#AD1457', index: 13 },    // Deep Maroon
+  { name: 'Steel', hex: '#546E7A', index: 14 },     // Blue Grey
+  { name: 'Coral', hex: '#FF5252', index: 15 }      // Light Coral
+];
+
 const RundownList = ({ 
   segments,
   liveItemId,
@@ -8,7 +28,9 @@ const RundownList = ({
   onItemClick,
   onItemDoubleClick,
   onManualItemDoubleClick,
-  itemTimers
+  itemTimers,
+  overlayStates,
+  onOverlayDoubleClick
 }) => {
   const containerRef = useRef(null);
   
@@ -208,10 +230,10 @@ const RundownList = ({
                     const cueHasPreviewItem = (cue.items || []).some(item => item.id === previewItemId);
                     
                     // Check if this cue has manual blocks with active manual items
-                    const cueHasActiveManual = executionState?.currentManualItem && (cue.items || []).some(item => {
+                    const cueHasActiveManual = executionState?.currentManualItems?.length > 0 && (cue.items || []).some(item => {
                       if (item.type === 'ManualBlock' || item.type === 'manualblock' || item.type === 'manual-block') {
                         return (item.data?.items || []).some(manualItem => 
-                          manualItem.id === executionState.currentManualItem
+                          executionState.currentManualItems.includes(manualItem.id)
                         );
                       }
                       return false;
@@ -326,14 +348,42 @@ const RundownList = ({
                               itemBorderColor = '#ff9800';
                             }
 
-                            // Check if this is a manual block or presenter note
+                            // Check if this is a manual block, presenter note, or auto overlay
                             const isManualBlock = item.type === 'ManualBlock' || item.type === 'manualblock' || item.type === 'manual-block';
                             const isPresenterNote = item.type === 'PresenterNote' || item.type === 'presenter-note' || item.type === 'presenternote' || item.type === 'note';
+                            const isAutoOverlay = item.type === 'Overlay' && (item.overlay_type === 'auto' || item.data?.overlay_type === 'auto');
+                            // Check if this overlay should be indented (is after a non-overlay item OR another auto overlay)
+                            let shouldIndent = false;
+                            if (isAutoOverlay && itemIndex > 0) {
+                              // Look backwards to find a non-overlay item
+                              for (let i = itemIndex - 1; i >= 0; i--) {
+                                const prevItem = cue.items[i];
+                                if (prevItem.type !== 'Overlay') {
+                                  shouldIndent = true;
+                                  break;
+                                }
+                                // If previous item is also an auto overlay, we should indent too
+                                if (prevItem.type === 'Overlay' && (prevItem.overlay_type === 'auto' || prevItem.data?.overlay_type === 'auto')) {
+                                  shouldIndent = true;
+                                  break;
+                                }
+                              }
+                            }
                             
                             if (isPresenterNote) {
                               // Render presenter note with prominent text display
                               const noteText = item.data?.note || item.data?.text || item.title || 'No note text';
                               const truncatedText = noteText.length > 120 ? noteText.substring(0, 120) + '...' : noteText;
+                              
+                              // Check if next item is also a child item (presenter note or auto overlay)
+                              const nextItem = cue.items[itemIndex + 1];
+                              const hasNextChild = nextItem && (
+                                nextItem.type === 'PresenterNote' || 
+                                nextItem.type === 'presenter-note' || 
+                                nextItem.type === 'presenternote' || 
+                                nextItem.type === 'note' ||
+                                (nextItem.type === 'Overlay' && (nextItem.overlay_type === 'auto' || nextItem.data?.overlay_type === 'auto'))
+                              );
                               
                               return (
                                 <div
@@ -345,16 +395,41 @@ const RundownList = ({
                                   }}
                                 >
                                   {/* Visual connector line */}
-                                  <div style={{
-                                    position: 'absolute',
-                                    left: '-25px',
-                                    top: '-6px',
-                                    width: '20px',
-                                    height: '50%',
-                                    borderLeft: '2px solid #009688',
-                                    borderBottom: '2px solid #009688',
-                                    borderBottomLeftRadius: '8px'
-                                  }} />
+                                  {hasNextChild ? (
+                                    <>
+                                      {/* Vertical line extending through */}
+                                      <div style={{
+                                        position: 'absolute',
+                                        left: '-25px',
+                                        top: '-6px',
+                                        width: '2px',
+                                        height: 'calc(100% + 12px)',
+                                        background: '#009688'
+                                      }} />
+                                      {/* Horizontal connector */}
+                                      <div style={{
+                                        position: 'absolute',
+                                        left: '-23px',
+                                        top: '50%',
+                                        width: '18px',
+                                        height: '2px',
+                                        background: '#009688',
+                                        transform: 'translateY(-50%)'
+                                      }} />
+                                    </>
+                                  ) : (
+                                    /* Last child - corner connector */
+                                    <div style={{
+                                      position: 'absolute',
+                                      left: '-25px',
+                                      top: '-6px',
+                                      width: '20px',
+                                      height: '56%',
+                                      borderLeft: '2px solid #009688',
+                                      borderBottom: '2px solid #009688',
+                                      borderBottomLeftRadius: '8px'
+                                    }} />
+                                  )}
                                   
                                   <div
                                     data-item-id={item.id}
@@ -418,7 +493,7 @@ const RundownList = ({
                               );
                             } else if (isManualBlock) {
                               // Render manual block
-                              const isActiveManualBlock = item.id === executionState?.currentManualItem;
+                              const isActiveManualBlock = executionState?.currentManualItems?.includes(item.id);
                               
                               return (
                                 <div key={item.id || itemIndex}>
@@ -479,11 +554,24 @@ const RundownList = ({
                                     {/* Manual Block sub-items - hardcoded for now */}
                                     <div style={{ padding: '8px 8px 8px 20px' }}>
                                       {/* Manual items from the manual block data */}
-                                      {(item.data?.items || []).map((manualItem) => {
+                                      {(item.data?.items || []).map((manualItem, manualIndex) => {
                                         const isArmed = executionState?.armedManualItem === manualItem.id || 
                                                        executionState?.armedManualButton === manualItem.id;
-                                        const isLive = executionState?.currentManualItem === manualItem.id;
+                                        
+                                        // Check if it's a manual overlay and get its color
+                                        const isOverlay = manualItem.type === 'Overlay' || 
+                                                         (manualItem.data?.overlay_type === 'manual') ||
+                                                         (manualItem.overlay_type === 'manual');
+                                        
+                                        // For overlays, check overlayStates; for regular manual items, check executionState
+                                        const isLive = isOverlay 
+                                          ? overlayStates?.[manualItem.id]?.state === 'live'
+                                          : executionState?.currentManualItems?.includes(manualItem.id);
+                                        
                                         const isPreview = executionState?.previewManualItem === manualItem.id;
+                                        
+                                        const colorIndex = manualItem.overlay_color_index ?? manualItem.data?.overlay_color_index ?? manualIndex;
+                                        const overlayColor = isOverlay ? MANUAL_OVERLAY_COLORS[colorIndex % MANUAL_OVERLAY_COLORS.length] : null;
                                         
                                         return (
                                           <div 
@@ -491,7 +579,13 @@ const RundownList = ({
                                             onDoubleClick={(e) => {
                                               e.preventDefault();
                                               e.stopPropagation();
-                                              if (onManualItemDoubleClick) {
+                                              if (isOverlay) {
+                                                // Double-click on overlay toggles it (both on and off)
+                                                if (onItemDoubleClick) {
+                                                  onItemDoubleClick(manualItem);
+                                                }
+                                              } else if (onManualItemDoubleClick) {
+                                                // Regular manual item
                                                 onManualItemDoubleClick(manualItem);
                                               }
                                             }}
@@ -501,8 +595,12 @@ const RundownList = ({
                                               gap: '4px',
                                               padding: '6px 10px',
                                               marginBottom: '4px',
-                                              background: isLive ? '#ffebee' : isPreview ? '#fff8e1' : isArmed ? '#fff3cd' : '#ffffff',
-                                              border: `2px solid ${isLive ? '#f44336' : isPreview ? '#ff9800' : isArmed ? '#ff9800' : '#d1c4e9'}`,
+                                              background: isOverlay 
+                                                        ? (isLive ? overlayColor.hex : `${overlayColor.hex}20`)
+                                                        : (isLive ? '#ffebee' : isPreview ? '#fff8e1' : isArmed ? '#fff3cd' : '#ffffff'),
+                                              border: `2px solid ${isOverlay 
+                                                        ? overlayColor.hex
+                                                        : (isLive ? '#f44336' : isPreview ? '#ff9800' : isArmed ? '#ff9800' : '#d1c4e9')}`,
                                               borderRadius: '4px',
                                               cursor: 'pointer',
                                               transition: 'all 0.15s',
@@ -511,12 +609,14 @@ const RundownList = ({
                                               WebkitUserSelect: 'none'
                                             }}
                                             onMouseEnter={(e) => {
-                                              if (!isLive && !isPreview && !isArmed) {
+                                              if (!isLive && !isPreview && !isArmed && !isOverlay) {
                                                 e.currentTarget.style.backgroundColor = '#f5f5f5';
                                               }
                                             }}
                                             onMouseLeave={(e) => {
-                                              const bgColor = isLive ? '#ffebee' : isPreview ? '#fff8e1' : isArmed ? '#fff3cd' : '#ffffff';
+                                              const bgColor = isOverlay 
+                                                            ? (isLive ? overlayColor.hex : `${overlayColor.hex}20`)
+                                                            : (isLive ? '#ffebee' : isPreview ? '#fff8e1' : isArmed ? '#fff3cd' : '#ffffff');
                                               e.currentTarget.style.backgroundColor = bgColor;
                                             }}
                                           >
@@ -525,8 +625,8 @@ const RundownList = ({
                                               alignItems: 'center',
                                               gap: '6px'
                                             }}>
-                                              {/* LED Status indicator for manual items */}
-                                              {(isLive || isPreview) && (
+                                              {/* LED Status indicator for all items */}
+                                              {(isLive || (isPreview && !isOverlay)) && (
                                                 <div style={{
                                                   width: '10px',
                                                   height: '10px',
@@ -534,24 +634,57 @@ const RundownList = ({
                                                   background: isLive ? '#ff0000' : '#ffa500',
                                                   flexShrink: 0,
                                                   boxShadow: isLive 
-                                                    ? '0 0 6px #ff0000, 0 0 10px #ff0000, 0 0 14px #ff0000'
+                                                    ? (isOverlay 
+                                                      ? '0 0 10px #ff0000, 0 0 20px #ff0000, 0 0 30px #ff0000' // Brighter for overlays
+                                                      : '0 0 6px #ff0000, 0 0 10px #ff0000, 0 0 14px #ff0000')
                                                     : '0 0 4px #ffa500, 0 0 8px #ffa500',
-                                                  animation: isPreview ? 'ledFlash 1.5s infinite' : 'none',
+                                                  animation: isLive ? 'ledFlash 1s infinite' : isPreview ? 'ledFlash 1.5s infinite' : 'none',
                                                   border: '1px solid rgba(255,255,255,0.3)'
+                                                }} />
+                                              )}
+                                              
+                                              {/* Color indicator for overlays - only show when not live */}
+                                              {isOverlay && !isLive && (
+                                                <div style={{
+                                                  width: '16px',
+                                                  height: '16px',
+                                                  background: overlayColor.hex,
+                                                  borderRadius: '50%',
+                                                  border: `2px solid white`,
+                                                  flexShrink: 0
                                                 }} />
                                               )}
                                               
                                               <span style={{ 
                                                 flex: 1,
-                                                color: '#333',
-                                                fontWeight: '500',
+                                                color: isOverlay 
+                                                  ? (isLive ? 'white' : overlayColor.hex)
+                                                  : '#333',
+                                                fontWeight: isOverlay ? '600' : '500',
                                                 fontSize: '13px'
                                               }}>
                                                 {manualItem.title}
                                               </span>
                                               
-                                              {/* Status badge for manual items */}
-                                              {(isLive || isPreview || isArmed) && (
+                                              {/* Status badge for overlays */}
+                                              {isOverlay && isLive && (
+                                                <span style={{
+                                                  fontSize: '8px',
+                                                  fontWeight: '700',
+                                                  color: overlayColor.hex,
+                                                  background: 'white',
+                                                  padding: '1px 6px',
+                                                  borderRadius: '6px',
+                                                  border: `1px solid white`,
+                                                  textTransform: 'uppercase',
+                                                  marginRight: '4px'
+                                                }}>
+                                                  LIVE
+                                                </span>
+                                              )}
+                                              
+                                              {/* Status badge for regular manual items */}
+                                              {!isOverlay && (isLive || isPreview || isArmed) && (
                                                 <span style={{
                                                   fontSize: '8px',
                                                   fontWeight: '700',
@@ -570,11 +703,11 @@ const RundownList = ({
                                               <span style={{
                                                 fontSize: '8px',
                                                 fontWeight: '600',
-                                                color: '#666',
-                                                background: 'rgba(255,255,255,0.8)',
+                                                color: isOverlay && isLive ? overlayColor.hex : '#666',
+                                                background: isOverlay && isLive ? 'white' : 'rgba(255,255,255,0.8)',
                                                 padding: '1px 4px',
                                                 borderRadius: '6px',
-                                                border: '1px solid #ccc',
+                                                border: `1px solid ${isOverlay && isLive ? 'white' : '#ccc'}`,
                                                 textTransform: 'uppercase'
                                               }}>
                                                 {manualItem.type}
@@ -584,6 +717,214 @@ const RundownList = ({
                                         );
                                       })}
                                     </div>
+                                  </div>
+                                </div>
+                              );
+                            } else if (shouldIndent) {
+                              // Render auto overlay with indentation
+                              const overlayState = overlayStates?.[item.id];
+                              const isWaiting = overlayState?.state === 'waiting';
+                              const isLive = overlayState?.state === 'live';
+                              const countdown = overlayState?.countdown;
+                              
+                              // Format countdown time as MM:SS
+                              const formatCountdown = (seconds) => {
+                                if (!seconds && seconds !== 0) return '';
+                                const mins = Math.floor(seconds / 60);
+                                const secs = seconds % 60;
+                                return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+                              };
+                              
+                              // Determine background and border colors based on state
+                              let bgColor = '#f3e5ff';
+                              let borderColor = '#9c27b0';
+                              let animation = 'none';
+                              
+                              if (isWaiting) {
+                                bgColor = '#fff8e1';
+                                borderColor = '#ffa500';
+                                animation = 'ledFlash 1.5s infinite';
+                              } else if (isLive) {
+                                bgColor = '#ffebee';
+                                borderColor = '#f44336';
+                              }
+                              
+                              // Check if next item is also a child item (presenter note or auto overlay)
+                              const nextItem = cue.items[itemIndex + 1];
+                              const hasNextChild = nextItem && (
+                                nextItem.type === 'PresenterNote' || 
+                                nextItem.type === 'presenter-note' || 
+                                nextItem.type === 'presenternote' || 
+                                nextItem.type === 'note' ||
+                                (nextItem.type === 'Overlay' && (nextItem.overlay_type === 'auto' || nextItem.data?.overlay_type === 'auto'))
+                              );
+                              
+                              return (
+                                <div
+                                  key={item.id || itemIndex}
+                                  style={{
+                                    position: 'relative',
+                                    marginLeft: '40px',
+                                    marginBottom: '6px'
+                                  }}
+                                >
+                                  {/* Visual connector line */}
+                                  {hasNextChild ? (
+                                    <>
+                                      {/* Vertical line extending through */}
+                                      <div style={{
+                                        position: 'absolute',
+                                        left: '-25px',
+                                        top: '-6px',
+                                        width: '2px',
+                                        height: 'calc(100% + 12px)',
+                                        background: borderColor
+                                      }} />
+                                      {/* Horizontal connector */}
+                                      <div style={{
+                                        position: 'absolute',
+                                        left: '-23px',
+                                        top: '50%',
+                                        width: '18px',
+                                        height: '2px',
+                                        background: borderColor,
+                                        transform: 'translateY(-50%)'
+                                      }} />
+                                    </>
+                                  ) : (
+                                    /* Last child - corner connector */
+                                    <div style={{
+                                      position: 'absolute',
+                                      left: '-25px',
+                                      top: '-6px',
+                                      width: '20px',
+                                      height: '56%',
+                                      borderLeft: `2px solid ${borderColor}`,
+                                      borderBottom: `2px solid ${borderColor}`,
+                                      borderBottomLeftRadius: '8px'
+                                    }} />
+                                  )}
+                                  
+                                  <div
+                                    data-item-id={item.id}
+                                    onDoubleClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (isLive && onOverlayDoubleClick) {
+                                        // Double-click failsafe for live overlays
+                                        onOverlayDoubleClick(item.id);
+                                      } else if (onItemDoubleClick) {
+                                        onItemDoubleClick(item);
+                                      }
+                                    }}
+                                    style={{
+                                      background: bgColor,
+                                      border: `2px solid ${borderColor}`,
+                                      borderRadius: '6px',
+                                      padding: '8px 12px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '8px',
+                                      cursor: 'pointer',
+                                      userSelect: 'none',
+                                      WebkitUserSelect: 'none',
+                                      transition: 'all 0.15s',
+                                      animation: animation
+                                    }}
+                                  >
+                                    {/* Status LED */}
+                                    {(isWaiting || isLive) && (
+                                      <div style={{
+                                        width: '12px',
+                                        height: '12px',
+                                        borderRadius: '50%',
+                                        background: isLive ? '#ff0000' : '#ffa500',
+                                        flexShrink: 0,
+                                        boxShadow: isLive 
+                                          ? '0 0 6px #ff0000, 0 0 10px #ff0000, 0 0 14px #ff0000'
+                                          : '0 0 4px #ffa500, 0 0 8px #ffa500',
+                                        border: '1px solid rgba(255,255,255,0.3)'
+                                      }} />
+                                    )}
+                                    
+                                    {/* Overlay icon */}
+                                    <div style={{
+                                      width: '20px',
+                                      height: '20px',
+                                      background: borderColor,
+                                      borderRadius: '4px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      fontSize: '10px',
+                                      fontWeight: 'bold',
+                                      color: '#fff',
+                                      flexShrink: 0
+                                    }}>
+                                      A
+                                    </div>
+                                    
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{
+                                        fontSize: '14px',
+                                        fontWeight: '600',
+                                        color: '#333'
+                                      }}>
+                                        {item.title || 'Auto Overlay'}
+                                      </div>
+                                      {item.data?.template_id && (
+                                        <div style={{
+                                          fontSize: '11px',
+                                          color: '#666',
+                                          marginTop: '2px'
+                                        }}>
+                                          Template: {item.data.template_id}
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    {/* Countdown display */}
+                                    {countdown !== null && countdown !== undefined && (
+                                      <span style={{
+                                        fontSize: '16px',
+                                        fontWeight: '700',
+                                        color: isLive ? '#f44336' : '#ffa500',
+                                        fontFamily: 'monospace',
+                                        minWidth: '50px',
+                                        textAlign: 'center'
+                                      }}>
+                                        {formatCountdown(countdown)}
+                                      </span>
+                                    )}
+                                    
+                                    {/* Status badge */}
+                                    {(isWaiting || isLive) && (
+                                      <span style={{
+                                        fontSize: '9px',
+                                        fontWeight: '700',
+                                        color: isLive ? '#f44336' : '#ffa500',
+                                        background: 'rgba(255,255,255,0.9)',
+                                        padding: '2px 6px',
+                                        borderRadius: '6px',
+                                        border: `1px solid ${isLive ? '#f44336' : '#ffa500'}`,
+                                        textTransform: 'uppercase'
+                                      }}>
+                                        {isLive ? 'LIVE' : 'WAITING'}
+                                      </span>
+                                    )}
+                                    
+                                    <span style={{
+                                      fontSize: '9px',
+                                      fontWeight: '600',
+                                      color: borderColor,
+                                      background: 'rgba(255,255,255,0.8)',
+                                      padding: '2px 6px',
+                                      borderRadius: '8px',
+                                      border: `1px solid ${borderColor}`,
+                                      textTransform: 'uppercase'
+                                    }}>
+                                      AUTO OVERLAY
+                                    </span>
                                   </div>
                                 </div>
                               );
@@ -658,7 +999,12 @@ const RundownList = ({
                                     fontWeight: '600',
                                     fontSize: '14px'
                                   }}>
-                                    {item.title || item.data?.title || 'Untitled Item'}
+                                    {(() => {
+                                      const title = item.title || item.data?.title || 'Untitled Item';
+                                      const normalizedType = (item.type || '').toLowerCase().replace(/[-_\s]/g, '');
+                                      const isAudioCue = normalizedType === 'audiocue' || item.type === 'AudioCue' || item.type === 'audio-cue';
+                                      return isAudioCue ? `⚡ ${title}` : title;
+                                    })()}
                                   </span>
                                   
                                   {/* Automation countdown - positioned before status badge */}

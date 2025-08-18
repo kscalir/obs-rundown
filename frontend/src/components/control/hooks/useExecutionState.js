@@ -8,7 +8,7 @@ const useExecutionState = (api, episodeId) => {
     armedManualButton: null,
     currentItemId: null,
     previewItemId: null,
-    currentManualItem: null,
+    currentManualItems: [], // Changed to array to support multiple live manual items
     previewManualItem: null,
     armedManualItem: null
   });
@@ -31,7 +31,7 @@ const useExecutionState = (api, episodeId) => {
           stopped: true,
           currentItemId: null,
           previewItemId: null,
-          currentManualItem: null,
+          currentManualItems: [],
           previewManualItem: null,
           armedManualItem: null,
           armedTransition: null,
@@ -90,6 +90,32 @@ const useExecutionState = (api, episodeId) => {
     }));
   }, []);
   
+  // Helper functions for managing manual items array
+  const addManualItem = useCallback((itemId) => {
+    setExecutionState(prev => ({
+      ...prev,
+      currentManualItems: prev.currentManualItems.includes(itemId) 
+        ? prev.currentManualItems 
+        : [...prev.currentManualItems, itemId]
+    }));
+  }, []);
+  
+  const removeManualItem = useCallback((itemId) => {
+    setExecutionState(prev => ({
+      ...prev,
+      currentManualItems: prev.currentManualItems.filter(id => id !== itemId)
+    }));
+  }, []);
+  
+  const toggleManualItem = useCallback((itemId) => {
+    setExecutionState(prev => ({
+      ...prev,
+      currentManualItems: prev.currentManualItems.includes(itemId)
+        ? prev.currentManualItems.filter(id => id !== itemId)
+        : [...prev.currentManualItems, itemId]
+    }));
+  }, []);
+  
   return {
     executionState,
     togglePause,
@@ -100,7 +126,10 @@ const useExecutionState = (api, episodeId) => {
     clearArmedManualButton,
     setCurrentItemId,
     setPreviewItemId,
-    setExecutionState
+    setExecutionState,
+    addManualItem,
+    removeManualItem,
+    toggleManualItem
   };
 };
 

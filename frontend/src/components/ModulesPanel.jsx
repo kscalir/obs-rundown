@@ -2,56 +2,73 @@ import React, { useState, useEffect } from "react";
 import { Droppable, Draggable } from "@hello-pangea/dnd";
 import { API_BASE_URL } from "../config.js";
 
-// Define toolbox items for the new full-screen components
+// Define toolbox items organized by category
 const TOOLBOX_ITEMS = [
-  {
-    id: 'fullscreen-graphic',
-    type: 'FullScreenGraphic',
-    title: 'Graphic',
-    description: 'Graphics template with transitions',
-    icon: 'GFX'
-  },
+  // Sources Section
   {
     id: 'fullscreen-video',
     type: 'FullScreenVideo', 
     title: 'Video',
     description: 'Video player with controls',
-    icon: 'VID'
+    icon: 'VID',
+    category: 'sources'
   },
   {
     id: 'fullscreen-youtube',
     type: 'FullScreenYouTube',
     title: 'YouTube',
     description: 'YouTube video with URL input',
-    icon: 'YT'
+    icon: 'YT',
+    category: 'sources'
   },
   {
     id: 'fullscreen-pdfimage',
     type: 'FullScreenPdfImage',
     title: 'PDF/Image',
     description: 'Images and PDFs with transforms',
-    icon: 'IMG'
+    icon: 'IMG',
+    category: 'sources'
   },
   {
     id: 'presenter-note',
     type: 'PresenterNote',
     title: 'Presenter Note',
     description: 'Long text note for presenters',
-    icon: 'NOTE'
+    icon: 'NOTE',
+    category: 'sources'
   },
   {
     id: 'audio-cue',
     type: 'AudioCue',
     title: 'Audio Cue',
     description: 'Automate audio input controls',
-    icon: 'AUD'
+    icon: 'AUD',
+    category: 'sources'
   },
   {
     id: 'manual-block',
     type: 'ManualBlock',
     title: 'Manual Cue Block',
     description: 'Container for manual cue execution',
-    icon: 'MAN'
+    icon: 'MAN',
+    category: 'sources'
+  },
+  // Graphics Section
+  {
+    id: 'overlay',
+    type: 'Overlay',
+    title: 'Overlay',
+    description: 'Auto or manual overlay based on context',
+    icon: 'OVL',
+    category: 'graphics'
+  },
+  {
+    id: 'fullscreen-graphic',
+    type: 'FullScreenGraphic',
+    title: 'Full Screen',
+    description: 'Full screen graphics template',
+    icon: 'GFX',
+    category: 'graphics'
   }
 ];
 
@@ -264,7 +281,19 @@ function ModulesPanel({ onModuleSelected }) {
                     gap: "12px"
                   }}
                 >
-                  {TOOLBOX_ITEMS.map((item, index) => (
+                  {/* Sources Section */}
+                  <div style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#999",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    marginBottom: "8px",
+                    paddingLeft: "4px"
+                  }}>
+                    Sources
+                  </div>
+                  {TOOLBOX_ITEMS.filter(item => item.category === 'sources').map((item, index) => (
                     <Draggable
                       key={item.id}
                       draggableId={`toolbox:item:${item.id}`}
@@ -306,6 +335,90 @@ function ModulesPanel({ onModuleSelected }) {
                             fontSize: "10px",
                             fontWeight: 700,
                             color: "#1976d2",
+                            flexShrink: 0
+                          }}>
+                            {item.icon}
+                          </div>
+                          
+                          {/* Content */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: "14px",
+                              fontWeight: 600,
+                              color: "#333",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap"
+                            }}>
+                              {item.title}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  
+                  {/* Graphics Section Divider */}
+                  <div style={{
+                    marginTop: "16px",
+                    marginBottom: "8px",
+                    borderTop: "1px solid #e1e6ec"
+                  }} />
+                  
+                  {/* Graphics Section */}
+                  <div style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#999",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    marginBottom: "8px",
+                    paddingLeft: "4px"
+                  }}>
+                    Graphics
+                  </div>
+                  {TOOLBOX_ITEMS.filter(item => item.category === 'graphics').map((item, index) => (
+                    <Draggable
+                      key={item.id}
+                      draggableId={`toolbox:item:${item.id}`}
+                      index={TOOLBOX_ITEMS.filter(i => i.category === 'sources').length + index}
+                    >
+                      {(dragProvided, dragSnapshot) => (
+                        <div
+                          ref={dragProvided.innerRef}
+                          {...dragProvided.draggableProps}
+                          {...dragProvided.dragHandleProps}
+                          style={{
+                            ...dragProvided.draggableProps.style,
+                            padding: "12px 16px",
+                            backgroundColor: dragSnapshot.isDragging ? "#e3f2fd" : "#fff",
+                            border: "1px solid #e1e6ec",
+                            borderRadius: "8px",
+                            cursor: "grab",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "12px",
+                            boxShadow: dragSnapshot.isDragging
+                              ? "0 8px 24px rgba(0,0,0,0.15)"
+                              : "0 2px 4px rgba(0,0,0,0.05)",
+                            willChange: "transform",
+                            transition: "opacity 160ms ease, box-shadow 160ms ease, transform 160ms ease",
+                            transform: dragSnapshot.isDragging ? "scale(1.02)" : "scale(1)",
+                            opacity: dragSnapshot.isDragging ? 0.95 : 1,
+                          }}
+                        >
+                          {/* Icon */}
+                          <div style={{
+                            width: 32,
+                            height: 32,
+                            backgroundColor: item.type === 'Overlay' ? "#f3e5ff" : "#e3f2fd",
+                            borderRadius: "6px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            color: item.type === 'Overlay' ? "#9c27b0" : "#1976d2",
                             flexShrink: 0
                           }}>
                             {item.icon}

@@ -1,8 +1,8 @@
 // Time formatting utilities
 
-export const formatTime = (date) => {
+export const formatTime = (date, use24Hour = true) => {
   return date.toLocaleTimeString('en-US', {
-    hour12: false,
+    hour12: !use24Hour,
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit'

@@ -1,13 +1,32 @@
 import React from 'react';
 
-const ManualCueButtons = ({ manualButtons = [], onButtonClick, executionState }) => {
+// Color palette for manual overlays (must match Overlay.jsx)
+const MANUAL_OVERLAY_COLORS = [
+  { name: 'Chartreuse', hex: '#7FFF00', index: 0 },
+  { name: 'Pink', hex: '#FF69B4', index: 1 },
+  { name: 'Cyan', hex: '#00FFFF', index: 2 },
+  { name: 'Orange', hex: '#FFA500', index: 3 },
+  { name: 'Purple', hex: '#9370DB', index: 4 },
+  { name: 'Yellow', hex: '#FFFF00', index: 5 },
+  { name: 'Lime', hex: '#32CD32', index: 6 },
+  { name: 'Coral', hex: '#FF7F50', index: 7 }
+];
+
+const ManualCueButtons = ({ manualButtons = [], onButtonClick, executionState, onOverlayClick }) => {
   if (!manualButtons || manualButtons.length === 0) {
     return null;
   }
 
   const handleClick = (button) => {
-    if (onButtonClick) {
-      onButtonClick(button);
+    // Check if it's a manual overlay
+    if (button.type === 'Overlay' && button.overlay_type === 'manual') {
+      if (onOverlayClick) {
+        onOverlayClick(button);
+      }
+    } else {
+      if (onButtonClick) {
+        onButtonClick(button);
+      }
     }
   };
 
@@ -38,16 +57,29 @@ const ManualCueButtons = ({ manualButtons = [], onButtonClick, executionState })
           const isLive = executionState?.currentManualItem === button.id;
           const isPreview = executionState?.previewManualItem === button.id;
           
+          // Check if it's a manual overlay and get its color
+          const isOverlay = button.type === 'Overlay' && button.overlay_type === 'manual';
+          const colorIndex = button.overlay_color_index ?? button.data?.overlay_color_index ?? index;
+          const overlayColor = isOverlay ? MANUAL_OVERLAY_COLORS[colorIndex % MANUAL_OVERLAY_COLORS.length] : null;
+          
+          // Determine button colors
+          const borderColor = isOverlay ? overlayColor.hex : 
+                             (isLive ? '#f44336' : isPreview ? '#ff9800' : isArmed ? '#ff9800' : '#2196f3');
+          const bgColor = isOverlay ? `${overlayColor.hex}20` :
+                         (isLive ? '#ffebee' : isPreview ? '#fff8e1' : isArmed ? '#fff3cd' : '#fff');
+          const textColor = isOverlay ? overlayColor.hex :
+                           (isLive ? '#f44336' : isPreview ? '#ff9800' : isArmed ? '#f57c00' : '#2196f3');
+          
           return (
             <button
               key={button.id || index}
               onClick={() => handleClick(button)}
               style={{
                 padding: '12px',
-                background: isLive ? '#ffebee' : isPreview ? '#fff8e1' : isArmed ? '#fff3cd' : '#fff',
-                border: `2px solid ${isLive ? '#f44336' : isPreview ? '#ff9800' : isArmed ? '#ff9800' : '#2196f3'}`,
+                background: bgColor,
+                border: `2px solid ${borderColor}`,
                 borderRadius: '6px',
-                color: isLive ? '#f44336' : isPreview ? '#ff9800' : isArmed ? '#f57c00' : '#2196f3',
+                color: textColor,
                 fontSize: '14px',
                 fontWeight: '600',
                 cursor: 'pointer',
@@ -55,7 +87,8 @@ const ManualCueButtons = ({ manualButtons = [], onButtonClick, executionState })
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '4px'
+                gap: '4px',
+                position: 'relative'
               }}
               onMouseEnter={(e) => {
                 if (!isLive && !isPreview && !isArmed) {
@@ -67,8 +100,30 @@ const ManualCueButtons = ({ manualButtons = [], onButtonClick, executionState })
                 e.currentTarget.style.background = bgColor;
               }}
             >
+              {isOverlay && (
+                <div style={{
+                  position: 'absolute',
+                  top: '4px',
+                  right: '4px',
+                  width: '16px',
+                  height: '16px',
+                  background: overlayColor.hex,
+                  borderRadius: '50%',
+                  border: '2px solid white'
+                }} />
+              )}
               <div>{button.title || button.type || 'Manual Item'}</div>
-              {(isLive || isPreview || isArmed) && (
+              {isOverlay && (
+                <div style={{
+                  fontSize: '9px',
+                  fontWeight: '700',
+                  textTransform: 'uppercase',
+                  color: overlayColor.hex
+                }}>
+                  OVERLAY
+                </div>
+              )}
+              {!isOverlay && (isLive || isPreview || isArmed) && (
                 <div style={{
                   fontSize: '10px',
                   fontWeight: '700',

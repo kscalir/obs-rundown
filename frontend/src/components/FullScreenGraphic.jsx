@@ -68,6 +68,8 @@ export default function FullScreenGraphic({ item, segments, onSave }) {
     transition: { type: "cut", durationSec: 0 },
     selectedGraphic: null,
     notes: "",
+    template_id: null,
+    template_data: {},
     automation: {
       mode: "manual", // manual, auto, auto-following
       waitIn: 1,
@@ -97,6 +99,8 @@ export default function FullScreenGraphic({ item, segments, onSave }) {
       transition: itemData.transition || { type: "cut", durationSec: 0 },
       selectedGraphic: itemData.selectedGraphic || null,
       notes: itemData.notes || "",
+      template_id: itemData.template_id || null,
+      template_data: itemData.template_data || {},
       automation: itemData.automation || {
         mode: "manual",
         waitIn: 1,
@@ -446,6 +450,16 @@ export default function FullScreenGraphic({ item, segments, onSave }) {
           }}>
             Full Screen Graphic
           </h3>
+          <div style={{
+            fontSize: 11,
+            color: '#666',
+            background: '#e3f2fd',
+            padding: '4px 8px',
+            borderRadius: 12,
+            fontWeight: 600
+          }}>
+            Graphics Channel 1
+          </div>
         </div>
 
         {/* Transition Controls */}

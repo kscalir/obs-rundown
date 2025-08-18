@@ -6,7 +6,9 @@ const useWebSocket = (onControlAction) => {
   
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws?control=true`;
+    // Connect to backend server on port 5050
+    const wsHost = window.location.hostname + ':5050';
+    const wsUrl = `${protocol}//${wsHost}/ws?control=true`;
     
     const websocket = new WebSocket(wsUrl);
     

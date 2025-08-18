@@ -6,8 +6,9 @@ import FullScreenVideo from "./FullScreenVideo";
 import FullScreenYouTube from "./FullScreenYouTube";
 import FullScreenPdfImage from "./FullScreenPdfImage";
 import PresenterNote from "./PresenterNote";
-import AudioControllerItem from "./AudioControllerItem";
+import AudioCue from "./AudioCue";
 import ManualBlock from "./ManualBlock";
+import Overlay from "./Overlay";
 
 export default function PropertiesPanel({
   segments,
@@ -84,8 +85,9 @@ export default function PropertiesPanel({
   const isFullScreenYouTube = t === "fullscreenyoutube";
   const isFullScreenPdfImage = t === "fullscreenpdfimage";
   const isPresenterNote = t === "presenternote";
-  const isAudioCue = t === "audiocue";
+  const isAudioCue = t === "audiocue" || t === "audio";
   const isManualBlock = t === "manualblock";
+  const isOverlay = t === "overlay";
 
 
   // Check if the selected item is nested inside a Manual Block
@@ -125,6 +127,15 @@ export default function PropertiesPanel({
   // Save handler that works for both regular items and nested items
   async function saveItemData(partial) {
     if (!selectedItem) return;
+    
+    // Force audio cues to always be auto with 0 duration
+    if (isAudioCue) {
+      partial = {
+        ...partial,
+        automation_mode: 'auto',
+        automation_duration: 0
+      };
+    }
     
     const parentManualBlock = findParentManualBlock(selectedItem.id);
     
@@ -342,8 +353,8 @@ export default function PropertiesPanel({
           </div>
         ) : (
           <>
-            {/* Always show automation controls for regular items (not manual blocks or presenter notes) */}
-            {!isManualBlock && !isPresenterNote && (
+            {/* Always show automation controls for regular items (not manual blocks, presenter notes, overlays, or audio cues) */}
+            {!isManualBlock && !isPresenterNote && !isOverlay && !isAudioCue && (
               <div style={{ padding: 12 }}>
                 <AutomationControls 
                   item={selectedItem} 
@@ -404,13 +415,21 @@ export default function PropertiesPanel({
                 }}
               />
             ) : isAudioCue ? (
-              <AudioControllerItem
-                key={`audiocue-${String(selectedItem.id)}-${t}`}
-                item={selectedItem}
-                onSave={async (data) => {
-                  await saveItemData({ data });
-                }}
-              />
+              (() => {
+                const parentInfo = findParentManualBlock(selectedItem.id);
+                const isManualContext = !!parentInfo;
+                return (
+                  <AudioCue
+                    key={`audiocue-${String(selectedItem.id)}-${t}`}
+                    item={selectedItem}
+                    segments={segments}
+                    isManualContext={isManualContext}
+                    onSave={async (data) => {
+                      await saveItemData({ data });
+                    }}
+                  />
+                );
+              })()
             ) : isManualBlock ? (
               <ManualBlock
                 key={`manual-${String(selectedItem.id)}-${t}`}
@@ -419,6 +438,26 @@ export default function PropertiesPanel({
                   await saveItemData({ data });
                 }}
               />
+            ) : isOverlay ? (
+              (() => {
+                const parentInfo = findParentManualBlock(selectedItem.id);
+                const isManualContext = !!parentInfo;
+                // If in manual block, use the nested index as color index if not already set
+                const colorIndex = selectedItem.overlay_color_index ?? 
+                                 selectedItem.data?.overlay_color_index ?? 
+                                 (parentInfo ? parentInfo.nestedIndex : 0);
+                return (
+                  <Overlay
+                    key={`overlay-${String(selectedItem.id)}-${t}`}
+                    item={selectedItem}
+                    isManualContext={isManualContext}
+                    colorIndex={colorIndex}
+                    onUpdate={async (updatedItem) => {
+                      await saveItemData(updatedItem);
+                    }}
+                  />
+                );
+              })()
             ) : (
               <div style={{ padding: 12, color: "#666" }}>
                 This item type isn't supported in the new properties panel yet.

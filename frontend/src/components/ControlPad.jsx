@@ -1,5 +1,25 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
+// Color palette for manual overlays (must match Overlay.jsx)
+const MANUAL_OVERLAY_COLORS = [
+  { name: 'Red', hex: '#E53935', index: 0 },        // Bright Red
+  { name: 'Blue', hex: '#1E88E5', index: 1 },       // Strong Blue
+  { name: 'Green', hex: '#43A047', index: 2 },      // Forest Green
+  { name: 'Orange', hex: '#FB8C00', index: 3 },     // Vivid Orange
+  { name: 'Purple', hex: '#8E24AA', index: 4 },     // Deep Purple
+  { name: 'Teal', hex: '#00ACC1', index: 5 },       // Cyan/Teal
+  { name: 'Pink', hex: '#D81B60', index: 6 },       // Hot Pink
+  { name: 'Lime', hex: '#7CB342', index: 7 },       // Lime Green
+  { name: 'Indigo', hex: '#3949AB', index: 8 },     // Deep Indigo
+  { name: 'Amber', hex: '#FFB300', index: 9 },      // Golden Amber
+  { name: 'Brown', hex: '#6D4C41', index: 10 },     // Dark Brown
+  { name: 'Navy', hex: '#283593', index: 11 },      // Navy Blue
+  { name: 'Olive', hex: '#558B2F', index: 12 },     // Olive Green
+  { name: 'Maroon', hex: '#AD1457', index: 13 },    // Deep Maroon
+  { name: 'Steel', hex: '#546E7A', index: 14 },     // Blue Grey
+  { name: 'Coral', hex: '#FF5252', index: 15 }      // Light Coral
+];
+
 export default function ControlPad({ 
   buttons = [], 
   buttonsPerRow = 8, 
@@ -60,6 +80,46 @@ export default function ControlPad({
 
     switch (button.type) {
       case 'manual':
+        // Check if it's a manual overlay
+        const isOverlay = button.data?.type === 'Overlay' && button.data?.overlay_type === 'manual';
+        if (isOverlay) {
+          const colorIndex = button.data?.overlay_color_index ?? button.data?.data?.overlay_color_index ?? 0;
+          const overlayColor = MANUAL_OVERLAY_COLORS[colorIndex % MANUAL_OVERLAY_COLORS.length];
+          
+          // Check if the overlay is live
+          if (button.isLive) {
+            // Live state - full color background with white text
+            return {
+              ...baseStyle,
+              background: overlayColor.hex,
+              borderColor: overlayColor.hex,
+              color: '#ffffff',
+              fontSize: `${16 * controlPadZoom}px`,
+              fontWeight: '700',
+              boxShadow: `0 0 ${10 * controlPadZoom}px ${overlayColor.hex}`
+            };
+          } else if (button.armed) {
+            // Armed/preview state - medium opacity
+            return {
+              ...baseStyle,
+              background: `${overlayColor.hex}40`,
+              borderColor: overlayColor.hex,
+              color: overlayColor.hex,
+              fontSize: `${16 * controlPadZoom}px`,
+              fontWeight: '700'
+            };
+          } else {
+            // Inactive state - light opacity
+            return {
+              ...baseStyle,
+              background: `${overlayColor.hex}20`,
+              borderColor: overlayColor.hex,
+              color: overlayColor.hex,
+              fontSize: `${16 * controlPadZoom}px`,
+              fontWeight: '700'
+            };
+          }
+        }
         return {
           ...baseStyle,
           background: button.armed ? '#fff3cd' : '#fff',
@@ -155,7 +215,44 @@ export default function ControlPad({
                 e.currentTarget.style.transform = 'scale(1.0)';
               }}
             >
-              {button.content}
+              {(() => {
+                // Check if it's a manual overlay and add indicator
+                const isOverlay = button.type === 'manual' && 
+                                  button.data?.type === 'Overlay' && 
+                                  button.data?.overlay_type === 'manual';
+                if (isOverlay) {
+                  const colorIndex = button.data?.overlay_color_index ?? button.data?.data?.overlay_color_index ?? 0;
+                  const overlayColor = MANUAL_OVERLAY_COLORS[colorIndex % MANUAL_OVERLAY_COLORS.length];
+                  return (
+                    <div style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      alignItems: 'center',
+                      gap: `${4 * controlPadZoom}px`
+                    }}>
+                      <div style={{
+                        width: `${20 * controlPadZoom}px`,
+                        height: `${20 * controlPadZoom}px`,
+                        background: button.isLive ? '#ffffff' : overlayColor.hex,
+                        borderRadius: '50%',
+                        border: `${2 * controlPadZoom}px solid ${button.isLive ? overlayColor.hex : 'white'}`,
+                        boxShadow: button.isLive ? `0 0 ${8 * controlPadZoom}px ${overlayColor.hex}` : 'none'
+                      }} />
+                      <div style={{ color: button.isLive ? '#ffffff' : 'inherit' }}>{button.content}</div>
+                      <div style={{
+                        fontSize: `${9 * controlPadZoom}px`,
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        opacity: button.isLive ? 1 : 0.8,
+                        color: button.isLive ? '#ffffff' : 'inherit'
+                      }}>
+                        {button.isLive ? 'LIVE' : 'OVERLAY'}
+                      </div>
+                    </div>
+                  );
+                }
+                return button.content;
+              })()}
             </button>
           ))}
         </div>

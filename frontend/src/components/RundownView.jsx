@@ -728,8 +728,8 @@ const lastDropAtRef = useRef(0);
       'FullScreenYouTube': 'YouTube',
       'FullScreenPdfImage': 'PDF/Image',
       'PresenterNote': 'Presenter Note',
-      'AudioCue': 'Audio Cue',
-      'audio-cue': 'Audio Cue',
+      'AudioCue': '⚡ Audio',
+      'audio-cue': '⚡ Audio',
       'presenter-note': 'Presenter Note',
       'obscommand': 'OBS Scene'
     };
@@ -938,8 +938,19 @@ const lastDropAtRef = useRef(0);
     </style>
   );
 
+  // Generate a key based on manual block IDs to force re-registration of droppables
+  const manualBlocksKey = segmentsState.reduce((acc, seg) => {
+    const manualBlocks = (seg.groups || []).reduce((grpAcc, grp) => {
+      const blocks = (grp.items || []).filter(item => 
+        item.type === 'ManualBlock' || item.type === 'manualblock' || item.type === 'manual-block'
+      ).map(item => item.id);
+      return grpAcc + blocks.join(',');
+    }, '');
+    return acc + manualBlocks;
+  }, '');
+
   return (
-    <DragDropContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
+    <DragDropContext key={`dnd-context-${manualBlocksKey}`} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       {fadeInStyles}
       <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden" }}>
         {/* Top bar */}
@@ -1192,6 +1203,37 @@ const lastDropAtRef = useRef(0);
                                                         const isManualBlock = it.type === "ManualBlock" || it.type === "manualblock" || it.type === "manual-block" || (it.data && it.data.type === "ManualBlock");
                                                         // Helper to check if this is a Presenter Note
                                                         const isPresenterNote = it.type === "PresenterNote" || it.type === "presenter-note" || it.type === "presenternote";
+                                                        // Helper to check if this is an auto overlay
+                                                        // Auto overlays are determined by type and context (need to find parent based on position)
+                                                        const isAutoOverlay = it.type === "Overlay" && (it.overlay_type === "auto" || it.data?.overlay_type === "auto");
+                                                        // Check if this item should be indented (is after a non-overlay item OR another auto overlay)
+                                                        // Find the first non-overlay item before this one
+                                                        let shouldIndent = false;
+                                                        if (isAutoOverlay && ii > 0) {
+                                                          // Look backwards to find a non-overlay item
+                                                          for (let i = ii - 1; i >= 0; i--) {
+                                                            const prevItem = g.items[i];
+                                                            if (prevItem.type !== "Overlay") {
+                                                              shouldIndent = true;
+                                                              break;
+                                                            }
+                                                            // If previous item is also an auto overlay, we should indent too
+                                                            if (prevItem.type === "Overlay" && (prevItem.overlay_type === "auto" || prevItem.data?.overlay_type === "auto")) {
+                                                              shouldIndent = true;
+                                                              break;
+                                                            }
+                                                          }
+                                                        }
+                                                        
+                                                        // Check if next item is also a child item (presenter note or auto overlay)
+                                                        const nextItem = g.items[ii + 1];
+                                                        const hasNextChild = nextItem && (
+                                                          nextItem.type === 'PresenterNote' || 
+                                                          nextItem.type === 'presenter-note' || 
+                                                          nextItem.type === 'presenternote' || 
+                                                          nextItem.type === 'note' ||
+                                                          (nextItem.type === 'Overlay' && (nextItem.overlay_type === 'auto' || nextItem.data?.overlay_type === 'auto'))
+                                                        );
                                                         
                                                         return (
                                                         <Draggable key={`item-${it.id}`} draggableId={`item-${it.id}`} index={ii}>
@@ -1217,12 +1259,12 @@ const lastDropAtRef = useRef(0);
                                                                 }
                                                               }}
                                                             style={{
-                                                              background: selectedItem === it.id ? "#e9f3ff" : isPresenterNote ? "#e0f2f1" : "#fff",
-                                                              border: selectedItem === it.id ? "2px solid #1976d2" : isPresenterNote ? "2px solid #009688" : "1px solid #b1c7e7",
+                                                              background: selectedItem === it.id ? "#e9f3ff" : isPresenterNote ? "#e0f2f1" : isAutoOverlay ? "#f3e5ff" : "#fff",
+                                                              border: selectedItem === it.id ? "2px solid #1976d2" : isPresenterNote ? "2px solid #009688" : isAutoOverlay ? "2px solid #9c27b0" : "1px solid #b1c7e7",
                                                               borderRadius: 6,
                                                               padding: isManualBlock ? "12px" : "8px 12px",
                                                               margin: "6px 0",
-                                                              marginLeft: isPresenterNote ? "40px" : "0",
+                                                              marginLeft: isPresenterNote || shouldIndent ? "40px" : "0",
                                                               display: "flex",
                                                               alignItems: isManualBlock ? "stretch" : "center",
                                                               flexDirection: isManualBlock ? "column" : "row",
@@ -1242,16 +1284,79 @@ const lastDropAtRef = useRef(0);
                                                             >
                                                               {/* Visual connector line for presenter notes */}
                                                               {isPresenterNote && (
-                                                                <div style={{
-                                                                  position: 'absolute',
-                                                                  left: '-25px',
-                                                                  top: '-6px',
-                                                                  width: '20px',
-                                                                  height: '50%',
-                                                                  borderLeft: '2px solid #009688',
-                                                                  borderBottom: '2px solid #009688',
-                                                                  borderBottomLeftRadius: '8px'
-                                                                }} />
+                                                                hasNextChild ? (
+                                                                  <>
+                                                                    {/* Vertical line extending through */}
+                                                                    <div style={{
+                                                                      position: 'absolute',
+                                                                      left: '-25px',
+                                                                      top: '-6px',
+                                                                      width: '2px',
+                                                                      height: 'calc(100% + 12px)',
+                                                                      background: '#009688'
+                                                                    }} />
+                                                                    {/* Horizontal connector */}
+                                                                    <div style={{
+                                                                      position: 'absolute',
+                                                                      left: '-23px',
+                                                                      top: '50%',
+                                                                      width: '18px',
+                                                                      height: '2px',
+                                                                      background: '#009688',
+                                                                      transform: 'translateY(-50%)'
+                                                                    }} />
+                                                                  </>
+                                                                ) : (
+                                                                  /* Last child - corner connector */
+                                                                  <div style={{
+                                                                    position: 'absolute',
+                                                                    left: '-25px',
+                                                                    top: '-6px',
+                                                                    width: '20px',
+                                                                    height: '56%',
+                                                                    borderLeft: '2px solid #009688',
+                                                                    borderBottom: '2px solid #009688',
+                                                                    borderBottomLeftRadius: '8px'
+                                                                  }} />
+                                                                )
+                                                              )}
+                                                              {/* Visual connector line for auto overlays */}
+                                                              {shouldIndent && (
+                                                                hasNextChild ? (
+                                                                  <>
+                                                                    {/* Vertical line extending through */}
+                                                                    <div style={{
+                                                                      position: 'absolute',
+                                                                      left: '-25px',
+                                                                      top: '-6px',
+                                                                      width: '2px',
+                                                                      height: 'calc(100% + 12px)',
+                                                                      background: '#9c27b0'
+                                                                    }} />
+                                                                    {/* Horizontal connector */}
+                                                                    <div style={{
+                                                                      position: 'absolute',
+                                                                      left: '-23px',
+                                                                      top: '50%',
+                                                                      width: '18px',
+                                                                      height: '2px',
+                                                                      background: '#9c27b0',
+                                                                      transform: 'translateY(-50%)'
+                                                                    }} />
+                                                                  </>
+                                                                ) : (
+                                                                  /* Last child - corner connector */
+                                                                  <div style={{
+                                                                    position: 'absolute',
+                                                                    left: '-25px',
+                                                                    top: '-6px',
+                                                                    width: '20px',
+                                                                    height: '56%',
+                                                                    borderLeft: '2px solid #9c27b0',
+                                                                    borderBottom: '2px solid #9c27b0',
+                                                                    borderBottomLeftRadius: '8px'
+                                                                  }} />
+                                                                )
                                                               )}
                                                               {isManualBlock ? (
                                                                 // Manual Block special rendering - container div handles layout
@@ -1429,7 +1534,10 @@ const lastDropAtRef = useRef(0);
                                                                   
                                                                   {/* Drop zone area */}
                                                                   <div style={{ position: "relative", zIndex: 0 }}>
-                                                                    <Droppable droppableId={`manual-block-${it.id}`} type="item">
+                                                                    <Droppable 
+                                                                      key={`manual-block-droppable-${it.id}`}
+                                                                      droppableId={`manual-block-${it.id}`} 
+                                                                      type="item">
                                                                       {(dropProvided, dropSnapshot) => (
                                                                         <div 
                                                                           ref={dropProvided.innerRef}
