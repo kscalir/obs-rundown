@@ -5,6 +5,30 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { toast } from "react-toastify";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { 
+  ClipboardData, 
+  PlayFill, 
+  List, 
+  ChevronRight, 
+  ChevronDown, 
+  Plus, 
+  PlusCircle, 
+  GripVertical,
+  Trash,
+  Files as FilesIcon,
+  X,
+  Lightning,
+  Film,
+  Image,
+  FileEarmarkPdf,
+  CardText,
+  MusicNote,
+  Camera,
+  Youtube,
+  StickyFill,
+  CardImage,
+  BoxSeam
+} from 'react-bootstrap-icons';
 import { API_BASE_URL } from "../config";
 import { createApi } from "../api/client";
 import { usePanelResize } from "../hooks/usePanelResize";
@@ -16,6 +40,7 @@ import PropertiesPanel from "./PropertiesPanel";
 import ModulesPanel from "./ModulesPanel";
 import { useSelection } from "../selection/SelectionContext.jsx";
 import { ToastContainer } from "react-toastify";
+import EpisodeManagementModal from "./EpisodeManagementModal";
 
 import "react-toastify/dist/ReactToastify.css";
 
@@ -136,7 +161,15 @@ export default function RundownView({ showId, showName: showNameProp, selectedTa
   const api = useMemo(() => createApi(API_BASE_URL), []);
 
   // Episodes
-  const { episodes, selectedEpisode, setSelectedEpisode, loading: epLoading } = useEpisodes(api, showId);
+  const { 
+    episodes, 
+    selectedEpisode, 
+    setSelectedEpisode, 
+    loading: epLoading,
+    addEpisode,
+    updateEpisode,
+    deleteEpisode
+  } = useEpisodes(api, showId);
 
   // Use centralized selection state
   const { episodeId: urlEpisodeId, setEpisodeId: setUrlEpisodeId, itemId: urlItemId, setItemId: setUrlItemId } = useSelection();
@@ -719,6 +752,40 @@ const lastDropAtRef = useRef(0);
 
   // Selected item
   const [selectedItem, setSelectedItem] = useState(null);
+  const [episodeModalOpen, setEpisodeModalOpen] = useState(false);
+
+  // Helper function to get icon for item type
+  const getItemIcon = (type) => {
+    switch(type) {
+      case 'FullScreenGraphic':
+      case 'Graphic':
+      case 'Overlay':
+        return <CardImage size={14} />;
+      case 'FullScreenVideo':
+      case 'Video':
+        return <Film size={14} />;
+      case 'YouTube':
+        return <Youtube size={14} />;
+      case 'FullScreenPdfImage':
+      case 'PDF/Image':
+        return <FileEarmarkPdf size={14} />;
+      case 'PresenterNote':
+      case 'Presenter Note':
+        return <StickyFill size={14} />;
+      case 'AudioCue':
+      case 'audio-cue':
+      case 'Audio':
+        return <MusicNote size={14} />;
+      case 'OBSScene':
+      case 'OBS Scene':
+        return <Camera size={14} />;
+      case 'ManualBlock':
+      case 'Manual Block':
+        return <BoxSeam size={14} />;
+      default:
+        return <List size={14} />;
+    }
+  };
 
   // Helper function to get display info for nested items
   const getItemDisplayInfo = (item) => {
@@ -728,8 +795,8 @@ const lastDropAtRef = useRef(0);
       'FullScreenYouTube': 'YouTube',
       'FullScreenPdfImage': 'PDF/Image',
       'PresenterNote': 'Presenter Note',
-      'AudioCue': '⚡ Audio',
-      'audio-cue': '⚡ Audio',
+      'AudioCue': 'Audio',
+      'audio-cue': 'Audio',
       'presenter-note': 'Presenter Note',
       'obscommand': 'OBS Scene'
     };
@@ -956,7 +1023,12 @@ const lastDropAtRef = useRef(0);
         {/* Top bar */}
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 48, background: "#fafdff", borderBottom: "1px solid #e1e6ec", display: "flex", alignItems: "center", gap: 12, padding: "0 12px", zIndex: 5 }}>
           <button onClick={() => (onBackToShows ? onBackToShows() : (window.location = "/"))} style={{ background: "#e3f2fd", border: "1px solid #b1c7e7", color: "#1976d2", borderRadius: 8, padding: "4px 12px" }}>← Back to Shows</button>
-          <strong style={{ color: "#1976d2" }}>{showName}</strong>
+          <strong style={{ color: "#1976d2" }}>
+            {showName}
+            {selectedEpisode && (
+              <span style={{ color: "#666", fontWeight: "normal" }}> - {selectedEpisode.name}</span>
+            )}
+          </strong>
           <div style={{ marginLeft: "auto", color: "#777", fontSize: 12 }}>{loading ? "Loading…" : ""}</div>
         </div>
 
@@ -971,21 +1043,44 @@ const lastDropAtRef = useRef(0);
         <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#fafdff", borderRight: "1px solid #e1e6ec", paddingTop: 0 }}>
           {/* Episode bar */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 15, borderBottom: "1px solid #ddd", background: "#f5f5f5" }}>
-            <label style={{ fontWeight: 600 }}>Episode:</label>
-            <select
-              value={selectedEpisode?.id || ""}
-              onChange={e => {
-                const ep = episodes.find(x => String(x.id) === e.target.value);
-                if (ep) { setSelectedEpisode(ep); setUrlEpisodeId(ep.id); }
+            <button
+              onClick={() => setEpisodeModalOpen(true)}
+              style={{
+                padding: "8px 16px",
+                border: "1px solid #1976d2",
+                borderRadius: 6,
+                background: "#1976d2",
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                transition: "all 200ms"
               }}
-              style={{ padding: "6px 10px", minWidth: 200 }}
-              disabled={loading}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = "#1565c0";
+                e.currentTarget.style.borderColor = "#1565c0";
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = "#1976d2";
+                e.currentTarget.style.borderColor = "#1976d2";
+              }}
+              title="Manage Episodes"
             >
-              <option value="">Select…</option>
-              {episodes.map(ep => (
-                <option key={ep.id} value={String(ep.id)}>{ep.name}</option>
-              ))}
-            </select>
+              <ClipboardData size={16} style={{ marginRight: 4 }} />
+              Manage Episodes
+            </button>
+            {!selectedEpisode && episodes.length > 0 && (
+              <div style={{ 
+                color: "#ff9800", 
+                fontSize: 14,
+                fontStyle: "italic"
+              }}>
+                No episode selected - Click Manage Episodes to select one
+              </div>
+            )}
           </div>
 
           {/* Segments list */}
@@ -1013,7 +1108,9 @@ const lastDropAtRef = useRef(0);
                               style={{ cursor: "grab", padding: 2 }}
                               role="button"
                               aria-label="Drag segment"
-                            >≡</div>
+                            >
+                              <GripVertical size={16} />
+                            </div>
                             <button
                               onClick={() => onToggleSegment(seg.id)}
                               style={{ background: "none", border: "none", color: seg.expanded ? "#1976d2" : "#b1c7e7" }}
@@ -1027,7 +1124,7 @@ const lastDropAtRef = useRef(0);
                                   transform: seg.expanded ? "rotate(90deg)" : "rotate(0deg)",
                                 }}
                               >
-                                ▶
+                                <ChevronRight size={14} />
                               </span>
                             </button>
                             {editing.type === "segment" && editing.segId === seg.id ? (
@@ -1115,12 +1212,12 @@ const lastDropAtRef = useRef(0);
                               title="Duplicate segment"
                               aria-label="Duplicate segment"
                               onClick={() => duplicateSegment(seg.id)}
-                            >⧉</IconButton>
+                            ><FilesIcon size={16} /></IconButton>
                             <IconButton
                               title="Delete segment"
                               aria-label="Delete segment"
                               onClick={() => deleteSegment(seg.id)}
-                            >🗑</IconButton>
+                            ><Trash size={16} /></IconButton>
                           </div>
                           <Collapse open={seg.expanded}>
                             <div style={{ paddingLeft: 20, paddingTop: 8 }}>
@@ -1146,7 +1243,9 @@ const lastDropAtRef = useRef(0);
                                               style={{ cursor: "grab", padding: 2, display: "inline-block" }}
                                               role="button"
                                               aria-label="Drag cue"
-                                            >≡</div>
+                                            >
+                              <GripVertical size={16} />
+                            </div>
                                             <button
                                               onClick={() => onToggleCue(seg.id, g.id)}
                                               style={{ background: "none", border: "none", color: g.expanded ? "#1976d2" : "#b1c7e7" }}
@@ -1160,7 +1259,7 @@ const lastDropAtRef = useRef(0);
                                                   transform: g.expanded ? "rotate(90deg)" : "rotate(0deg)",
                                                 }}
                                               >
-                                                ▶
+                                                <ChevronRight size={14} />
                                               </span>
                                             </button>
                                             {editing.type === "cue" && editing.groupId === g.id ? (
@@ -1185,12 +1284,12 @@ const lastDropAtRef = useRef(0);
                                               title="Duplicate cue"
                                               aria-label="Duplicate cue"
                                               onClick={() => duplicateCue(seg.id, g.id)}
-                                            >⧉</IconButton>
+                                            ><FilesIcon size={16} /></IconButton>
                                             <IconButton
                                               title="Delete cue"
                                               aria-label="Delete cue"
                                               onClick={() => deleteCue(g.id)}
-                                            >🗑</IconButton>
+                                            ><Trash size={16} /></IconButton>
 
                                             {/* Cue items collapse */}
                                             <Collapse open={g.expanded}>
@@ -1385,8 +1484,10 @@ const lastDropAtRef = useRef(0);
                                                                       role="button"
                                                                       aria-label="Drag to reorder Manual Block"
                                                                       title="Drag to reorder"
-                                                                    >≡</div>
-                                                                    <span style={{ marginRight: 8, fontSize: "16px" }}>📋</span>
+                                                                    >
+                              <GripVertical size={16} />
+                            </div>
+                                                                    <List size={16} style={{ marginRight: 8 }} />
                                                                     {editing.type === "item" && editing.itemId === it.id ? (
                                                                       <input
                                                                         autoFocus
@@ -1411,7 +1512,7 @@ const lastDropAtRef = useRef(0);
                                                                       aria-label="Delete item"
                                                                       onClick={e => { e.stopPropagation(); deleteItem(it.id); }}
                                                                       style={{ marginLeft: 8 }}
-                                                                    >🗑</IconButton>
+                                                                    ><Trash size={16} /></IconButton>
                                                                   </div>
                                                                   
                                                                   {/* Nested items section - completely separate from Droppable */}
@@ -1482,8 +1583,12 @@ const lastDropAtRef = useRef(0);
                                                                                   <div style={{ 
                                                                                     fontWeight: 600, 
                                                                                     color: isSelected ? "#1976d2" : "#222",
-                                                                                    marginBottom: "2px"
+                                                                                    marginBottom: "2px",
+                                                                                    display: "flex",
+                                                                                    alignItems: "center",
+                                                                                    gap: "6px"
                                                                                   }}>
+                                                                                    {getItemIcon(displayInfo.type)}
                                                                                     {displayInfo.type}
                                                                                   </div>
                                                                                   {displayInfo.title && (
@@ -1523,7 +1628,7 @@ const lastDropAtRef = useRef(0);
                                                                                 }}
                                                                                 title="Remove item"
                                                                               >
-                                                                                ×
+                                                                                <X size={16} />
                                                                               </button>
                                                                             </div>
                                                                           );
@@ -1578,7 +1683,12 @@ const lastDropAtRef = useRef(0);
                                                                         >
                                                                           {it.data?.items && it.data.items.length > 0 ? (
                                                                             // Compact text for when items exist
-                                                                            dropSnapshot.isDraggingOver && "+ Add item"
+                                                                            dropSnapshot.isDraggingOver && (
+                                                                              <>
+                                                                                <Plus size={14} style={{ marginRight: 2 }} />
+                                                                                Add item
+                                                                              </>
+                                                                            )
                                                                           ) : (
                                                                             // Full text for empty Manual Block
                                                                             <>
@@ -1597,7 +1707,7 @@ const lastDropAtRef = useRef(0);
                                                               ) : (
                                                                 // Regular item rendering
                                                                 <div {...itProvided.dragHandleProps} style={{ display: "flex", alignItems: "center", width: "100%" }}>
-                                                                  <span style={{ marginRight: 8 }}>🎛</span>
+                                                                  <span style={{ marginRight: 8 }}>{getItemIcon(it.type)}</span>
                                                                   {editing.type === "item" && editing.itemId === it.id ? (
                                                                     <input
                                                                       autoFocus
@@ -1638,7 +1748,7 @@ const lastDropAtRef = useRef(0);
                                                                     aria-label="Delete item"
                                                                     onClick={e => { e.stopPropagation(); deleteItem(it.id); }}
                                                                     style={{ marginLeft: 8 }}
-                                                                  >🗑</IconButton>
+                                                                  ><Trash size={16} /></IconButton>
                                                                 </div>
                                                               )}
                                                             </li>
@@ -1689,7 +1799,8 @@ const lastDropAtRef = useRef(0);
                                         title={selectedEpisode ? "Add a new cue at the end" : "Select an episode first"}
                                         aria-label="Add new cue"
                                       >
-                                        + Add Cue
+                                        <Plus size={16} style={{ marginRight: 4 }} />
+                                        Add Cue
                                       </button>
                                     </div>
                                   </div>
@@ -1732,7 +1843,8 @@ const lastDropAtRef = useRef(0);
                 title={selectedEpisode ? "Add a new segment at the end" : "Select an episode first"}
                 aria-label="Add new segment"
               >
-                + Add Segment
+                <Plus size={16} style={{ marginRight: 4 }} />
+                Add Segment
               </button>
             </div>
           </div>
@@ -1757,6 +1869,38 @@ const lastDropAtRef = useRef(0);
         </div>
       </div>
       <ToastContainer position="bottom-right" newestOnTop closeOnClick pauseOnHover draggable={false} />
+      
+      {/* Episode Management Modal */}
+      <EpisodeManagementModal
+        isOpen={episodeModalOpen}
+        onClose={() => setEpisodeModalOpen(false)}
+        episodes={episodes}
+        selectedEpisode={selectedEpisode}
+        onEpisodeSelected={(episode) => {
+          setSelectedEpisode(episode);
+          setUrlEpisodeId(episode.id);
+          setEpisodeModalOpen(false);
+        }}
+        onEpisodeCreated={(newEpisode) => {
+          // Add the new episode to the list
+          addEpisode(newEpisode);
+        }}
+        onEpisodeUpdated={(updatedEpisode) => {
+          // Update the episode in the list and selection if needed
+          console.log('RundownView onEpisodeUpdated called with:', updatedEpisode);
+          console.log('updateEpisode function exists?', !!updateEpisode);
+          updateEpisode(updatedEpisode);
+        }}
+        onEpisodeDeleted={(deletedId) => {
+          // Remove the episode from the list and clear selection if needed
+          deleteEpisode(deletedId);
+          if (selectedEpisode?.id === deletedId) {
+            setUrlEpisodeId(null);
+          }
+        }}
+        api={api}
+        showId={showId}
+      />
     </DragDropContext>
   );
 }

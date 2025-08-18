@@ -577,46 +577,79 @@ export default function ControlPageRefactored() {
     if (isCurrentlyLive) {
       // Item is already live - remove it
       toggleManualItem(manualItem.id);
-    
-    // Execute the actual manual item based on type
-    if (manualItem && manualItem.data) {
-      const normalizedType = (manualItem.type || '').toLowerCase().replace(/[-_\s]/g, '');
-      const isAudioCue = normalizedType === 'audiocue' || manualItem.type === 'audio-cue';
       
-      if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'media') {
-        // Play media file via OBS
-        console.log('Playing audio media:', manualItem.data.sourceName);
-        // Send command to backend to play media
-        if (sendMessageRef.current) {
-          sendMessageRef.current({
-            type: 'PLAY_AUDIO',
-            itemId: manualItem.id,
-            mediaPath: manualItem.data.mediaPath,
-            mediaId: manualItem.data.mediaId,
-            volume: manualItem.data.volume || 100
-          });
-        }
-      } else if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'mic') {
-        // Unmute/turn on mic
-        console.log('Enabling mic:', manualItem.data.sourceName);
-        if (sendMessageRef.current) {
-          sendMessageRef.current({
-            type: 'CONTROL_MIC',
-            itemId: manualItem.id,
-            sourceId: manualItem.data.sourceId,
-            sourceName: manualItem.data.sourceName,
-            volume: manualItem.data.volume || 100,
-            action: 'unmute'
-          });
+      // Stop the audio if it's an audio cue
+      if (manualItem && manualItem.data) {
+        const normalizedType = (manualItem.type || '').toLowerCase().replace(/[-_\s]/g, '');
+        const isAudioCue = normalizedType === 'audiocue' || manualItem.type === 'audio-cue';
+        
+        if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'media') {
+          // Stop media file
+          console.log('Stopping audio media:', manualItem.data.sourceName);
+          if (sendMessageRef.current) {
+            sendMessageRef.current({
+              type: 'STOP_AUDIO',
+              itemId: manualItem.id,
+              mediaId: manualItem.data.mediaId,
+              fadeOut: manualItem.data.manualFadeOut || false,
+              fadeDuration: manualItem.data.manualFadeDuration || 0
+            });
+          }
+        } else if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'mic') {
+          // Mute mic
+          console.log('Muting mic:', manualItem.data.sourceName);
+          if (sendMessageRef.current) {
+            sendMessageRef.current({
+              type: 'CONTROL_MIC',
+              itemId: manualItem.id,
+              sourceId: manualItem.data.sourceId,
+              sourceName: manualItem.data.sourceName,
+              action: 'mute',
+              fadeOut: manualItem.data.manualFadeOut || false,
+              fadeDuration: manualItem.data.manualFadeDuration || 0
+            });
+          }
         }
       }
-    }
     } else {
       // Item is not live - add it
       toggleManualItem(manualItem.id);
+      
+      // Execute the actual manual item based on type
+      if (manualItem && manualItem.data) {
+        const normalizedType = (manualItem.type || '').toLowerCase().replace(/[-_\s]/g, '');
+        const isAudioCue = normalizedType === 'audiocue' || manualItem.type === 'audio-cue';
+        
+        if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'media') {
+          // Play media file via OBS
+          console.log('Playing audio media:', manualItem.data.sourceName);
+          // Send command to backend to play media
+          if (sendMessageRef.current) {
+            sendMessageRef.current({
+              type: 'PLAY_AUDIO',
+              itemId: manualItem.id,
+              mediaPath: manualItem.data.mediaPath,
+              mediaId: manualItem.data.mediaId,
+              volume: manualItem.data.volume || 100
+            });
+          }
+        } else if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'mic') {
+          // Unmute/turn on mic
+          console.log('Enabling mic:', manualItem.data.sourceName);
+          if (sendMessageRef.current) {
+            sendMessageRef.current({
+              type: 'CONTROL_MIC',
+              itemId: manualItem.id,
+              sourceId: manualItem.data.sourceId,
+              sourceName: manualItem.data.sourceName,
+              volume: manualItem.data.volume || 100,
+              action: 'unmute'
+            });
+          }
+        }
+      }
     }
     
-    console.log('Toggling manual item:', manualItem, 'isLive:', !isCurrentlyLive);
   }, [executionState.currentManualItems, toggleManualItem]);
   
   // Execute manual item (from button click) - put it directly LIVE

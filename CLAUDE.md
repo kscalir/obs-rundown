@@ -117,6 +117,13 @@ Simple URL-based routing in `main.jsx`:
 - Button scaling maintains square proportions
 - All transitions and execution logic operational
 
+## UI Guidelines
+- **Icons**: Use Bootstrap Icons (`react-bootstrap-icons`) exclusively throughout the application
+  - Already installed: `npm install react-bootstrap-icons`
+  - Import example: `import { Files, Gear, Play, Stop } from 'react-bootstrap-icons'`
+  - Usage: `<Files size={18} />` for consistent sizing
+  - Do NOT use emoji characters or other icon libraries
+
 ## Commands
 - Start frontend: `cd frontend && npm run dev`
 - Start backend: `cd backend && npm start`

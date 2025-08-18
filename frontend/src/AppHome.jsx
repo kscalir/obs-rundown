@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import ShowsHome from "./components/ShowsHome";
 import MainPanel from "./components/MainPanel";
 import { SelectionProvider, useSelection } from "./selection/SelectionContext.jsx";
+import { createApi } from "./api/client";
+import { useEpisodes } from "./hooks/useEpisodes";
 
 // If you want localStorage fallback for first load:
 const boot = {
@@ -19,11 +21,23 @@ function AppInner() {
   // Use centralized selection state
   const { showId, setShowId } = useSelection();
   
+  // API instance
+  const API_BASE_URL = window.API_BASE_URL || "http://localhost:5050";
+  const api = useMemo(() => createApi(API_BASE_URL), []);
+  
   // Load selected show and tab from localStorage on mount
   const [selectedShow, setSelectedShow] = useState(() => {
     const savedShow = localStorage.getItem("obsRundownShow");
     return savedShow ? JSON.parse(savedShow) : null;
   });
+  
+  const [selectedTab, setSelectedTab] = useState(() => {
+    const savedTab = localStorage.getItem("obsRundownLastTab");
+    return savedTab || "rundown";
+  });
+  
+  // Episodes hook - using a shared instance key to ensure sync across components
+  const { episodes, selectedEpisode } = useEpisodes(api, showId, "obsSelectedEpisode");
   
   // Sync selectedShow with centralized showId
   useEffect(() => {
@@ -44,10 +58,6 @@ function AppInner() {
       setSelectedShow(null);
     }
   }, [showId]);
-  const [selectedTab, setSelectedTab] = useState(() => {
-    const savedTab = localStorage.getItem("obsRundownLastTab");
-    return savedTab || "rundown";
-  });
 
   // When a show is selected, restore last tab for that show
   const handleShowSelected = (show) => {
@@ -142,7 +152,16 @@ function AppInner() {
         >
           ← Back to Shows
         </button>
-        <span style={{ fontWeight: 700, fontSize: 20, color: "#1976d2", letterSpacing: 0.2 }}>{selectedShow.name}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontWeight: 700, fontSize: 18, color: "#666" }}>Show:</span>
+          <span style={{ fontWeight: 700, fontSize: 20, color: "#1976d2", letterSpacing: 0.2 }}>{selectedShow.name}</span>
+          {selectedEpisode && (
+            <>
+              <span style={{ fontWeight: 700, fontSize: 18, color: "#666", marginLeft: '16px' }}>Episode:</span>
+              <span style={{ fontWeight: 700, fontSize: 20, color: "#1976d2", letterSpacing: 0.2 }}>{selectedEpisode.name}</span>
+            </>
+          )}
+        </div>
       </div>
       {/* Tab Bar at the top of the page */}
       <div style={{

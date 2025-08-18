@@ -68,15 +68,6 @@ export function useRundownDnD({ api, segments, setSegments, selectedEpisode }) {
     const { source, destination, draggableId, type } = result || {};
     if (!destination) return;
     
-    // Debug logging for manual block drops
-    if (destination.droppableId.startsWith("manual-block-")) {
-      console.log("Dropping into manual block:", {
-        source: source.droppableId,
-        destination: destination.droppableId,
-        draggableId,
-        type
-      });
-    }
 
     // SEGMENTS: reorder
     if (type === "segment") {
