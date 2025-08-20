@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback, Suspense, lazy } from 'react';
 import { 
   Palette, Folder2Open, Save, Plus, Fonts, Square, Circle,
   Cursor, CursorText, FileEarmarkImage, FileEarmarkPlay, Collection, GridFill,
@@ -7,7 +7,35 @@ import {
 } from 'react-bootstrap-icons';
 import TemplateCanvas from './graphics/TemplateCanvas';
 import PropertiesPanel from './graphics/PropertiesPanel';
-import BroadcastTimeline from './graphics/BroadcastTimeline';
+
+const BroadcastTimeline = lazy(() => import('./graphics/BroadcastTimeline'));
+
+const ToolButton = ({ active, title, onClick, children }) => (
+  <button
+    type="button"
+    aria-pressed={active}
+    onClick={onClick}
+    title={title}
+    style={{
+      width: '40px',
+      height: '40px',
+      background: active ? '#4a90e2' : '#333',
+      borderRadius: '4px',
+      color: '#fff',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      border: 'none',
+      position: 'relative',   // ensure stacking context
+      overflow: 'hidden',
+    }}
+  >
+    <span style={{ display: 'inline-flex', pointerEvents: 'none', position: 'relative', zIndex: 1 }}>
+      {children}
+    </span>
+  </button>
+);
 
 
 const GraphicsTab = ({ showId }) => {
@@ -18,9 +46,23 @@ const GraphicsTab = ({ showId }) => {
   const [selectedElement, setSelectedElement] = useState(null);
   const [canvasElements, setCanvasElements] = useState([]);
   const canvasRef = useRef();
-  const [canvasInstance, setCanvasInstance] = useState(null);
+  const canvasFnsRef = useRef(null);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [timelineState, setTimelineState] = useState(null);
+  
+  useEffect(() => {
+    if (canvasFnsRef.current?.setZoom) {
+      canvasFnsRef.current.setZoom(zoomLevel / 100);
+    }
+  }, [zoomLevel]);
+
+  const handleTimelineUpdate = useCallback((update) => {
+    if (!update?.elementId) return;
+    if (canvasFnsRef.current?.updateElementFromTimeline) {
+      canvasFnsRef.current.updateElementFromTimeline(update.elementId, update.values);
+    }
+    setTimelineState(update);
+  }, []);
   
   // Load templates for this show
   React.useEffect(() => {
@@ -296,171 +338,51 @@ const GraphicsTab = ({ showId }) => {
               alignItems: 'center',
               gap: '10px'
             }}>
-              <div 
-                onClick={() => setSelectedTool('select')}
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  background: selectedTool === 'select' ? '#4a90e2' : '#333',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Select"
-              >
-                <Cursor size={18} color="#fff" />
-              </div>
-              
-              <div 
-                onClick={() => setSelectedTool('text')}
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  background: selectedTool === 'text' ? '#4a90e2' : '#333',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Text"
-              >
-                <CursorText size={18} color="#fff" />
-              </div>
-              
-              <div 
-                onClick={() => setSelectedTool('rect')}
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  background: selectedTool === 'rect' ? '#4a90e2' : '#333',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Rectangle"
-              >
-                <Square size={18} color="#fff" />
-              </div>
-              
-              <div 
-                onClick={() => setSelectedTool('circle')}
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  background: selectedTool === 'circle' ? '#4a90e2' : '#333',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Circle"
-              >
-                <Circle size={18} color="#fff" />
-              </div>
-              
-              <div 
-                onClick={() => setSelectedTool('image')}
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  background: selectedTool === 'image' ? '#4a90e2' : '#333',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Image"
-              >
-                <FileEarmarkImage size={18} color="#fff" />
-              </div>
-              
-              <div 
-                onClick={() => setSelectedTool('video')}
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  background: selectedTool === 'video' ? '#4a90e2' : '#333',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Video"
-              >
-                <FileEarmarkPlay size={18} color="#fff" />
-              </div>
+              {[
+                { id: 'select', icon: Cursor, title: 'Select' },
+                { id: 'text', icon: CursorText, title: 'Text' },
+                { id: 'rect', icon: Square, title: 'Rectangle' },
+                { id: 'circle', icon: Circle, title: 'Circle' },
+                { id: 'image', icon: FileEarmarkImage, title: 'Image' },
+                { id: 'video', icon: FileEarmarkPlay, title: 'Video' },
+              ].map(tool => (
+                <ToolButton
+                  key={tool.id}
+                  active={selectedTool === tool.id}
+                  title={tool.title}
+                  onClick={() => setSelectedTool(tool.id)}
+                >
+                  <span style={{ pointerEvents: 'none' }}>
+                    <tool.icon size={18} />
+                  </span>
+                </ToolButton>
+              ))}
               
               {/* Separator */}
               <div style={{ height: '1px', backgroundColor: '#444', margin: '5px 0' }}></div>
               
               {/* Group/Ungroup buttons */}
-              <div 
-                onClick={() => {
-                  console.log('Group button clicked!');
-                  console.log('canvasInstance:', canvasInstance);
-                  if (canvasInstance && canvasInstance.groupSelected) {
-                    console.log('Calling groupSelected function');
-                    canvasInstance.groupSelected();
-                  } else {
-                    console.log('No groupSelected function available');
-                  }
-                }}
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  background: '#333',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
+              <ToolButton
                 title="Group (Ctrl+G)"
-              >
-                <Collection size={16} color="#fff" />
-              </div>
-              
-              <div 
                 onClick={() => {
-                  console.log('Ungroup button clicked!');
-                  console.log('canvasInstance:', canvasInstance);
-                  if (canvasInstance && canvasInstance.ungroupSelected) {
-                    console.log('Calling ungroupSelected function');
-                    canvasInstance.ungroupSelected();
-                  } else {
-                    console.log('No ungroupSelected function available');
+                  if (canvasFnsRef.current?.groupSelected) {
+                    canvasFnsRef.current.groupSelected();
                   }
                 }}
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  background: '#333',
-                  borderRadius: '4px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Ungroup (Ctrl+Shift+G)"
               >
-                <GridFill size={16} color="#fff" />
-              </div>
+                <Collection size={16} />
+              </ToolButton>
+              
+              <ToolButton
+                title="Ungroup (Ctrl+Shift+G)"
+                onClick={() => {
+                  if (canvasFnsRef.current?.ungroupSelected) {
+                    canvasFnsRef.current.ungroupSelected();
+                  }
+                }}
+              >
+                <GridFill size={16} />
+              </ToolButton>
               
             </div>
 
@@ -496,12 +418,9 @@ const GraphicsTab = ({ showId }) => {
                 
                 {/* Fit Canvas Button */}
                 <button
-                  onClick={() => {
-                    setZoomLevel(100);
-                    if (canvasInstance && canvasInstance.setZoom) {
-                      canvasInstance.setZoom(1);
-                    }
-                  }}
+                onClick={() => {
+                  setZoomLevel(100);
+                }}
                   style={{
                     padding: '4px 8px',
                     background: '#444',
@@ -517,12 +436,9 @@ const GraphicsTab = ({ showId }) => {
                 
                 {/* 100% Button */}
                 <button
-                  onClick={() => {
-                    setZoomLevel(100);
-                    if (canvasInstance && canvasInstance.setZoom) {
-                      canvasInstance.setZoom(1);
-                    }
-                  }}
+                onClick={() => {
+                  setZoomLevel(100);
+                }}
                   style={{
                     padding: '4px 8px',
                     background: zoomLevel === 100 ? '#4a90e2' : '#444',
@@ -541,9 +457,6 @@ const GraphicsTab = ({ showId }) => {
                   onClick={() => {
                     const newZoom = Math.max(25, zoomLevel - 25);
                     setZoomLevel(newZoom);
-                    if (canvasInstance && canvasInstance.setZoom) {
-                      canvasInstance.setZoom(newZoom / 100);
-                    }
                   }}
                   style={{
                     width: '24px',
@@ -564,9 +477,6 @@ const GraphicsTab = ({ showId }) => {
                   onClick={() => {
                     const newZoom = Math.min(400, zoomLevel + 25);
                     setZoomLevel(newZoom);
-                    if (canvasInstance && canvasInstance.setZoom) {
-                      canvasInstance.setZoom(newZoom / 100);
-                    }
                   }}
                   style={{
                     width: '24px',
@@ -600,11 +510,8 @@ const GraphicsTab = ({ showId }) => {
                 {/* Alignment Controls */}
                 <div 
                   onClick={() => {
-                    console.log('Align left clicked, canvasInstance:', canvasInstance);
-                    if (canvasInstance && canvasInstance.alignElements) {
-                      canvasInstance.alignElements('left');
-                    } else {
-                      console.log('alignElements function not found');
+                    if (canvasFnsRef.current?.alignElements) {
+                      canvasFnsRef.current.alignElements('left');
                     }
                   }}
                   style={{
@@ -620,13 +527,13 @@ const GraphicsTab = ({ showId }) => {
                   }}
                   title="Align Left Edges"
                 >
-                  <AlignStart size={14} color="#fff" />
+                  <span style={{ pointerEvents: 'none' }}><AlignStart size={14} /></span>
                 </div>
                 
                 <div 
                   onClick={() => {
-                    if (canvasInstance && canvasInstance.alignElements) {
-                      canvasInstance.alignElements('centerH');
+                    if (canvasFnsRef.current?.alignElements) {
+                      canvasFnsRef.current.alignElements('centerH');
                     }
                   }}
                   style={{
@@ -642,13 +549,13 @@ const GraphicsTab = ({ showId }) => {
                   }}
                   title="Align Center Horizontally"
                 >
-                  <AlignCenter size={14} color="#fff" />
+                  <span style={{ pointerEvents: 'none' }}><AlignCenter size={14} /></span>
                 </div>
                 
                 <div 
                   onClick={() => {
-                    if (canvasInstance && canvasInstance.alignElements) {
-                      canvasInstance.alignElements('right');
+                    if (canvasFnsRef.current?.alignElements) {
+                      canvasFnsRef.current.alignElements('right');
                     }
                   }}
                   style={{
@@ -664,7 +571,7 @@ const GraphicsTab = ({ showId }) => {
                   }}
                   title="Align Right Edges"
                 >
-                  <AlignEnd size={14} color="#fff" />
+                  <span style={{ pointerEvents: 'none' }}><AlignEnd size={14} /></span>
                 </div>
                 
                 {/* Separator */}
@@ -672,8 +579,8 @@ const GraphicsTab = ({ showId }) => {
                 
                 <div 
                   onClick={() => {
-                    if (canvasInstance && canvasInstance.alignElements) {
-                      canvasInstance.alignElements('top');
+                    if (canvasFnsRef.current?.alignElements) {
+                      canvasFnsRef.current.alignElements('top');
                     }
                   }}
                   style={{
@@ -689,13 +596,13 @@ const GraphicsTab = ({ showId }) => {
                   }}
                   title="Align Top Edges"
                 >
-                  <AlignTop size={14} color="#fff" />
+                  <span style={{ pointerEvents: 'none' }}><AlignTop size={14} /></span>
                 </div>
                 
                 <div 
                   onClick={() => {
-                    if (canvasInstance && canvasInstance.alignElements) {
-                      canvasInstance.alignElements('centerV');
+                    if (canvasFnsRef.current?.alignElements) {
+                      canvasFnsRef.current.alignElements('centerV');
                     }
                   }}
                   style={{
@@ -711,13 +618,13 @@ const GraphicsTab = ({ showId }) => {
                   }}
                   title="Align Center Vertically"
                 >
-                  <AlignMiddle size={14} color="#fff" />
+                  <span style={{ pointerEvents: 'none' }}><AlignMiddle size={14} /></span>
                 </div>
                 
                 <div 
                   onClick={() => {
-                    if (canvasInstance && canvasInstance.alignElements) {
-                      canvasInstance.alignElements('bottom');
+                    if (canvasFnsRef.current?.alignElements) {
+                      canvasFnsRef.current.alignElements('bottom');
                     }
                   }}
                   style={{
@@ -733,7 +640,7 @@ const GraphicsTab = ({ showId }) => {
                   }}
                   title="Align Bottom Edges"
                 >
-                  <AlignBottom size={14} color="#fff" />
+                  <span style={{ pointerEvents: 'none' }}><AlignBottom size={14} /></span>
                 </div>
                 
                 {/* Separator */}
@@ -746,8 +653,8 @@ const GraphicsTab = ({ showId }) => {
                 {/* Distribution Controls */}
                 <div 
                   onClick={() => {
-                    if (canvasInstance && canvasInstance.distributeElements) {
-                      canvasInstance.distributeElements('horizontal');
+                    if (canvasFnsRef.current?.distributeElements) {
+                      canvasFnsRef.current.distributeElements('horizontal');
                     }
                   }}
                   style={{
@@ -763,13 +670,13 @@ const GraphicsTab = ({ showId }) => {
                   }}
                   title="Distribute Horizontally"
                 >
-                  <DistributeHorizontal size={14} color="#fff" />
+                  <span style={{ pointerEvents: 'none' }}><DistributeHorizontal size={14} /></span>
                 </div>
                 
                 <div 
                   onClick={() => {
-                    if (canvasInstance && canvasInstance.distributeElements) {
-                      canvasInstance.distributeElements('vertical');
+                    if (canvasFnsRef.current?.distributeElements) {
+                      canvasFnsRef.current.distributeElements('vertical');
                     }
                   }}
                   style={{
@@ -785,7 +692,7 @@ const GraphicsTab = ({ showId }) => {
                   }}
                   title="Distribute Vertically"
                 >
-                  <DistributeVertical size={14} color="#fff" />
+                  <span style={{ pointerEvents: 'none' }}><DistributeVertical size={14} /></span>
                 </div>
               </div>
 
@@ -798,42 +705,29 @@ const GraphicsTab = ({ showId }) => {
                   ref={canvasRef}
                   selectedTool={selectedTool}
                   onElementSelect={(element) => {
-                    console.log('onElementSelect called with:', element);
+                    if (process.env.NODE_ENV !== 'production') console.log('onElementSelect called with:', element);
                     setSelectedElement(element);
                   }}
-                  onCanvasReady={(functions) => {
-                    console.log('Canvas ready with functions:', functions);
-                    setCanvasInstance(functions);
-                  }}
+                onCanvasReady={(functions) => {
+                    if (process.env.NODE_ENV !== 'production') console.log('Canvas ready with functions:', functions);
+                    canvasFnsRef.current = functions;
+                }}
                   elements={canvasElements}
-                  onElementsChange={(newElements) => {
-                    setCanvasElements(newElements);
-                    // Update selected element if it exists in the new elements
-                    if (selectedElement) {
-                      const updated = newElements.find(el => el.id === selectedElement.id);
-                      if (updated) {
-                        setSelectedElement(updated);
-                      }
-                    }
-                  }}
+                onElementsChange={(newElements) => {
+                  setCanvasElements(newElements);
+                  setSelectedElement(prev => (prev ? newElements.find(el => el.id === prev.id) ?? null : null));
+                }}
                   selectedElementId={selectedElement?.id}
                 />
               </div>
 
               {/* Timeline Area */}
-              <BroadcastTimeline 
-                elements={canvasElements}
-                onTimelineUpdate={(update) => {
-                  setTimelineState(update);
-                  
-                  // Apply timeline animation values to canvas elements
-                  if (canvasInstance && canvasInstance.updateElementFromTimeline && update.elementId) {
-                    canvasInstance.updateElementFromTimeline(update.elementId, update.values);
-                  }
-                  
-                  console.log('Timeline update:', update);
-                }}
-              />
+              <Suspense fallback={<div style={{height: 200, background: '#111', borderTop: '1px solid #333', color: '#666', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>Loading timeline…</div>}>
+                <BroadcastTimeline 
+                  elements={canvasElements}
+                  onTimelineUpdate={handleTimelineUpdate}
+                />
+              </Suspense>
             </div>
 
             {/* Right Sidebar - Properties */}
