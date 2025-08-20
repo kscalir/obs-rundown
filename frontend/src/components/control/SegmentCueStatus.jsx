@@ -1,4 +1,5 @@
 import React from 'react';
+import { VolumeUpFill } from 'react-bootstrap-icons';
 
 const SegmentCueStatus = ({ currentSegment, currentCue, upcomingSegment, upcomingCue, segments, liveItemId, currentManualItems = [] }) => {
   // Track when audio items went live for countdown
@@ -306,7 +307,8 @@ const SegmentCueStatus = ({ currentSegment, currentCue, upcomingSegment, upcomin
         alignItems: 'center',
         gap: '8px'
       }}>
-        <span>🔊 Active Audio</span>
+        <VolumeUpFill size={16} />
+        <span>Active Audio</span>
         {hasActiveAudio && (
           <span style={{
             background: '#ff6b6b',

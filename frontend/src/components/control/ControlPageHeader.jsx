@@ -1,4 +1,5 @@
 import React from 'react';
+import { Controller, Display } from 'react-bootstrap-icons';
 
 const ControlPageHeader = ({ 
   showName, 
@@ -6,7 +7,8 @@ const ControlPageHeader = ({
   episodes, 
   selectedEpisodeId, 
   onEpisodeChange,
-  onControlSurfaceClick 
+  onControlSurfaceClick,
+  onPresenterViewClick 
 }) => {
   return (
     <div style={{
@@ -50,6 +52,27 @@ const ControlPageHeader = ({
           </select>
         )}
         
+        {/* Presenter View Button */}
+        <button
+          onClick={onPresenterViewClick}
+          style={{
+            padding: '6px 16px',
+            background: '#ff9800',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          <Display size={16} />
+          Presenter View
+        </button>
+        
         {/* Control Surface Button */}
         <button
           onClick={onControlSurfaceClick}
@@ -67,7 +90,7 @@ const ControlPageHeader = ({
             gap: '6px'
           }}
         >
-          <span style={{ fontSize: '16px' }}>📱</span>
+          <Controller size={16} />
           Control Surface
         </button>
       </div>

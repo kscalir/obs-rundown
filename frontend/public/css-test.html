@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animate.css Test</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            padding: 40px;
+        }
+        .test-box {
+            display: inline-block;
+            padding: 20px;
+            margin: 10px;
+            background-color: #333;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .test-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pure HTML Animate.css Test</h1>
+    <p>This tests animate.css without React to isolate the issue.</p>
+    
+    <div class="test-container">
+        <div class="test-box animate__animated animate__bounce" id="bounce-test">
+            Bounce Test
+        </div>
+        
+        <div class="test-box animate__animated animate__fadeInLeft" id="fade-test">
+            Fade In Left Test
+        </div>
+        
+        <div class="test-box animate__animated animate__shakeX" id="shake-test">
+            Shake X Test
+        </div>
+    </div>
+    
+    <div class="test-container">
+        <button onclick="restartAnimations()">Restart Animations</button>
+    </div>
+    
+    <div id="debug-info" style="background: #2a2a2a; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <h3>Debug Information:</h3>
+        <div id="debug-output"></div>
+    </div>
+    
+    <script>
+        function restartAnimations() {
+            const elements = document.querySelectorAll('.test-box');
+            elements.forEach(el => {
+                // Remove animation classes
+                el.classList.remove('animate__animated');
+                el.style.animation = 'none';
+                
+                // Force reflow
+                el.offsetHeight;
+                
+                // Re-add animation classes
+                setTimeout(() => {
+                    el.classList.add('animate__animated');
+                    el.style.animation = '';
+                }, 10);
+            });
+        }
+        
+        function updateDebugInfo() {
+            const debugOutput = document.getElementById('debug-output');
+            const testEl = document.getElementById('bounce-test');
+            const computedStyle = getComputedStyle(testEl);
+            
+            debugOutput.innerHTML = `
+                <p><strong>Animation Name:</strong> ${computedStyle.animationName}</p>
+                <p><strong>Animation Duration:</strong> ${computedStyle.animationDuration}</p>
+                <p><strong>Animation Timing Function:</strong> ${computedStyle.animationTimingFunction}</p>
+                <p><strong>Classes:</strong> ${testEl.className}</p>
+                <p><strong>Stylesheets Count:</strong> ${document.styleSheets.length}</p>
+                <p><strong>Animate.css Loaded:</strong> ${Array.from(document.styleSheets).some(sheet => 
+                    sheet.href && sheet.href.includes('animate'))}</p>
+            `;
+        }
+        
+        // Update debug info on load
+        document.addEventListener('DOMContentLoaded', () => {
+            updateDebugInfo();
+            
+            // Add event listeners
+            document.querySelectorAll('.test-box').forEach(el => {
+                el.addEventListener('animationstart', (e) => {
+                    console.log('Animation started:', e.animationName, 'on', e.target.id);
+                });
+                el.addEventListener('animationend', (e) => {
+                    console.log('Animation ended:', e.animationName, 'on', e.target.id);
+                });
+            });
+        });
+        
+        // Update debug info every 2 seconds
+        setInterval(updateDebugInfo, 2000);
+    </script>
+</body>
+</html>

@@ -76,21 +76,34 @@ global.wss = wss;
 
 // Store control surface connections
 const controlConnections = new Set();
+// Store presenter view connections by episodeId
+const presenterConnections = new Map(); // episodeId -> Set of connections
 
 // Handle WebSocket connections
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, 'http://localhost');
   const channel = parseInt(url.searchParams.get('channel') || '1');
   const isControl = url.searchParams.get('control') === 'true';
+  const isPresenter = url.searchParams.get('presenter') === 'true';
+  const episodeId = url.searchParams.get('episodeId');
   
-  console.log(`WebSocket client connected to channel ${channel}${isControl ? ' (control)' : ''}`);
+  console.log(`WebSocket client connected to channel ${channel}${isControl ? ' (control)' : ''}${isPresenter ? ' (presenter)' : ''}`);
   
   // Store channel info on the WebSocket
   ws.channel = channel;
   ws.isControl = isControl;
+  ws.isPresenter = isPresenter;
+  ws.episodeId = episodeId;
   
   if (isControl) {
     controlConnections.add(ws);
+  }
+  
+  if (isPresenter && episodeId) {
+    if (!presenterConnections.has(episodeId)) {
+      presenterConnections.set(episodeId, new Set());
+    }
+    presenterConnections.get(episodeId).add(ws);
   }
   
   ws.on('message', (message) => {
@@ -99,10 +112,49 @@ wss.on('connection', (ws, req) => {
       
       // Handle control surface actions
       if (data.type === 'CONTROL_ACTION') {
-        console.log('Received control action:', data);
-        // Broadcast to all control connections
+          // Broadcast to all control connections
         controlConnections.forEach(client => {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(data));
+          }
+        });
+      }
+      
+      // Handle timer sync from control page
+      if (data.type === 'TIMER_SYNC' && data.episodeId) {
+          // Broadcast to all presenter connections for this episode
+        const presenters = presenterConnections.get(data.episodeId);
+        if (presenters) {
+          presenters.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify(data));
+            }
+          });
+        }
+      }
+      
+      // Handle segment change from control page
+      if (data.type === 'SEGMENT_CHANGE' && data.episodeId) {
+          // Broadcast to all presenter connections for this episode
+        const presenters = presenterConnections.get(data.episodeId);
+        if (presenters) {
+          presenters.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify(data));
+            }
+          });
+        }
+      }
+      
+      // Handle presenter subscription (for future use)
+      if (data.type === 'SUBSCRIBE_TIMER_SYNC') {
+        }
+      
+      // Handle timer sync request - forward to control connections
+      if (data.type === 'REQUEST_TIMER_SYNC' && data.episodeId) {
+          // Forward request to all control connections
+        controlConnections.forEach(client => {
+          if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify(data));
           }
         });
@@ -113,9 +165,18 @@ wss.on('connection', (ws, req) => {
   });
   
   ws.on('close', () => {
-    console.log(`WebSocket client disconnected from channel ${channel}${isControl ? ' (control)' : ''}`);
+    console.log(`WebSocket client disconnected from channel ${channel}${isControl ? ' (control)' : ''}${isPresenter ? ' (presenter)' : ''}`);
     if (isControl) {
       controlConnections.delete(ws);
+    }
+    if (isPresenter && episodeId) {
+      const presenters = presenterConnections.get(episodeId);
+      if (presenters) {
+        presenters.delete(ws);
+        if (presenters.size === 0) {
+          presenterConnections.delete(episodeId);
+        }
+      }
     }
   });
   

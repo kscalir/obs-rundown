@@ -11,6 +11,7 @@ import PresenterNotes from './PresenterNotes';
 import QuickAccessButtons from './QuickAccessButtons';
 import ManualCueButtons from './ManualCueButtons';
 import QRCodeModal from './QRCodeModal';
+import PresenterQRModal from './PresenterQRModal';
 import ActiveOverlaysDisplay from './ActiveOverlaysDisplay';
 
 // Import hooks
@@ -34,9 +35,31 @@ export default function ControlPageRefactored() {
   const [segments, setSegments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [liveItemId, setLiveItemId] = useState(null);
-  const [previewItemId, setPreviewItemId] = useState(null);
+  const [liveItemId, setLiveItemIdState] = useState(null);
+  const [previewItemId, setPreviewItemIdState] = useState(null);
+  
+  // Wrapper functions to update both local state and database
+  const setLiveItemId = useCallback((itemId) => {
+    setLiveItemIdState(itemId);
+    // Update database
+    if (episodeId) {
+      api.put(`/api/execution/episode/${episodeId}`, {
+        live_item_id: itemId
+      }).catch(() => {});
+    }
+  }, [episodeId, api]);
+  
+  const setPreviewItemId = useCallback((itemId) => {
+    setPreviewItemIdState(itemId);
+    // Update database
+    if (episodeId) {
+      api.put(`/api/execution/episode/${episodeId}`, {
+        preview_item_id: itemId
+      }).catch(() => {});
+    }
+  }, [episodeId, api]);
   const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [presenterModalOpen, setPresenterModalOpen] = useState(false);
   const [itemTimers, setItemTimers] = useState({});
   const [controlPadWindow, setControlPadWindow] = useState(null);
   const [controlPadZoom, setControlPadZoom] = useState(1.0);
@@ -87,6 +110,23 @@ export default function ControlPageRefactored() {
         setLoading(true);
         setError(null);
         
+        // Load existing execution state
+        try {
+          const execState = await api.get(`/api/execution/episode/${episodeId}`);
+          if (execState) {
+            setLiveItemIdState(execState.live_item_id || null);
+            setPreviewItemIdState(execState.preview_item_id || null);
+            setExecutionState(prev => ({
+              ...prev,
+              paused: execState.is_paused || false,
+              armedTransition: execState.armed_transition || null,
+              currentManualBlockId: execState.current_manual_block_id || null
+            }));
+          }
+        } catch (err) {
+          // If no execution state exists, that's ok
+        }
+        
         // Load rundown segments using exact same API call as old ControlPage
         const segmentsData = await api.get(`/api/episodes/${episodeId}/segments?include=groups,items`);
         
@@ -107,7 +147,6 @@ export default function ControlPageRefactored() {
         setSegments(processedSegments);
         setLoading(false);
       } catch (error) {
-        console.error('Failed to load rundown data:', error);
         setError(error.message);
         setLoading(false);
       }
@@ -126,7 +165,6 @@ export default function ControlPageRefactored() {
           setObsTransitions(response.transitions);
         }
       } catch (error) {
-        console.error('Failed to load OBS transitions:', error);
         // Use fallback transitions if OBS is not connected
         setObsTransitions([
           { transitionName: 'Cut', transitionKind: 'cut_transition' },
@@ -144,11 +182,28 @@ export default function ControlPageRefactored() {
   
   // Update timers
   useEffect(() => {
+    let lastSyncTime = 0;
+    
     const interval = setInterval(() => {
       setCurrentTime(new Date());
       
       if (segmentStartTime && !timersPaused) {
-        setSegmentElapsed(Date.now() - segmentStartTime);
+        const elapsed = Date.now() - segmentStartTime;
+        setSegmentElapsed(elapsed);
+        
+        // Send timer sync every 5 seconds
+        const now = Date.now();
+        if (now - lastSyncTime > 5000) {
+          lastSyncTime = now;
+          if (sendMessageRef.current) {
+            sendMessageRef.current({
+              type: 'TIMER_SYNC',
+              episodeId: episodeId,
+              segmentElapsed: Math.floor(elapsed / 1000),
+              isRunning: true
+            });
+          }
+        }
       }
       
       if (showStartTime && !timersPaused) {
@@ -157,7 +212,7 @@ export default function ControlPageRefactored() {
     }, 100);
     
     return () => clearInterval(interval);
-  }, [segmentStartTime, showStartTime, timersPaused]);
+  }, [segmentStartTime, showStartTime, timersPaused, episodeId]);
   
   // Get current segment and cue
   const getCurrentSegmentAndCue = useCallback(() => {
@@ -336,7 +391,7 @@ export default function ControlPageRefactored() {
       return;
     }
     
-    // Get all items in order (excluding notes and auto overlays)
+    // Get all items in order (excluding notes, auto overlays, and manual blocks for preview)
     const allItems = [];
     segments.forEach(segment => {
       (segment.cues || []).forEach(cue => {
@@ -364,12 +419,25 @@ export default function ControlPageRefactored() {
         setLiveItemId(previewItemId);
         setExecutionCurrentItemId(previewItemId);
         
-        // Find next item for preview
+        // Find next item for preview (skip manual blocks)
         const previewIndex = allItems.findIndex(item => item.id === previewItemId);
-        if (previewIndex !== -1 && previewIndex < allItems.length - 1) {
-          const nextPreviewItem = allItems[previewIndex + 1];
-          setPreviewItemId(nextPreviewItem.id);
-          setExecutionPreviewItemId(nextPreviewItem.id);
+        if (previewIndex !== -1) {
+          let nextPreviewItem = null;
+          for (let i = previewIndex + 1; i < allItems.length; i++) {
+            const item = allItems[i];
+            // Skip manual blocks for preview
+            if (item.type !== 'ManualBlock' && item.type !== 'manual-block' && item.type !== 'manual_block') {
+              nextPreviewItem = item;
+              break;
+            }
+          }
+          if (nextPreviewItem) {
+            setPreviewItemId(nextPreviewItem.id);
+            setExecutionPreviewItemId(nextPreviewItem.id);
+          } else {
+            setPreviewItemId(null);
+            setExecutionPreviewItemId(null);
+          }
         } else {
           setPreviewItemId(null);
           setExecutionPreviewItemId(null);
@@ -390,6 +458,23 @@ export default function ControlPageRefactored() {
         // Update segment timer if needed
         if (!segmentStartTime) {
           setSegmentStartTime(Date.now());
+          // Send segment change notification
+          const { segment: newSegment } = getCurrentSegmentAndCue();
+          if (sendMessageRef.current && newSegment) {
+            sendMessageRef.current({
+              type: 'SEGMENT_CHANGE',
+              episodeId: episodeId,
+              segmentName: newSegment.title,
+              segmentAllotted: newSegment.allotted_time
+            });
+            // Also send initial timer sync
+            sendMessageRef.current({
+              type: 'TIMER_SYNC',
+              episodeId: episodeId,
+              segmentElapsed: 0,
+              isRunning: !timersPaused
+            });
+          }
         }
         if (!showStartTime) {
           setShowStartTime(Date.now());
@@ -401,9 +486,19 @@ export default function ControlPageRefactored() {
       setExecutionCurrentItemId(allItems[0].id);
       startAutoTimer(allItems[0]);
       
-      if (allItems.length > 1) {
-        setPreviewItemId(allItems[1].id);
-        setExecutionPreviewItemId(allItems[1].id);
+      // Set preview to next non-manual item if available
+      let nextPreviewItem = null;
+      for (let i = 1; i < allItems.length; i++) {
+        const item = allItems[i];
+        // Skip manual blocks for preview
+        if (item.type !== 'ManualBlock' && item.type !== 'manual-block' && item.type !== 'manual_block') {
+          nextPreviewItem = item;
+          break;
+        }
+      }
+      if (nextPreviewItem) {
+        setPreviewItemId(nextPreviewItem.id);
+        setExecutionPreviewItemId(nextPreviewItem.id);
       }
       
       setSegmentStartTime(Date.now());
@@ -417,9 +512,17 @@ export default function ControlPageRefactored() {
         setExecutionCurrentItemId(nextItem.id);
         startAutoTimer(nextItem);
         
-        // Set next preview if available
-        if (currentIndex + 2 < allItems.length) {
-          const nextPreviewItem = allItems[currentIndex + 2];
+        // Set next preview, skipping manual blocks
+        let nextPreviewItem = null;
+        for (let i = currentIndex + 2; i < allItems.length; i++) {
+          const item = allItems[i];
+          // Skip manual blocks for preview
+          if (item.type !== 'ManualBlock' && item.type !== 'manual-block' && item.type !== 'manual_block') {
+            nextPreviewItem = item;
+            break;
+          }
+        }
+        if (nextPreviewItem) {
           setPreviewItemId(nextPreviewItem.id);
           setExecutionPreviewItemId(nextPreviewItem.id);
         }
@@ -457,6 +560,15 @@ export default function ControlPageRefactored() {
         setSegmentStartTime(null);
         setShowStartTime(null);
         setSegmentElapsed(0);
+        // Send timer reset to presenter view
+        if (sendMessageRef.current) {
+          sendMessageRef.current({
+            type: 'TIMER_SYNC',
+            episodeId: episodeId,
+            segmentElapsed: 0,
+            isRunning: false
+          });
+        }
         setShowElapsed(0);
         setItemTimers({});
         // Clear any running timer
@@ -585,7 +697,6 @@ export default function ControlPageRefactored() {
         
         if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'media') {
           // Stop media file
-          console.log('Stopping audio media:', manualItem.data.sourceName);
           if (sendMessageRef.current) {
             sendMessageRef.current({
               type: 'STOP_AUDIO',
@@ -597,7 +708,6 @@ export default function ControlPageRefactored() {
           }
         } else if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'mic') {
           // Mute mic
-          console.log('Muting mic:', manualItem.data.sourceName);
           if (sendMessageRef.current) {
             sendMessageRef.current({
               type: 'CONTROL_MIC',
@@ -622,7 +732,6 @@ export default function ControlPageRefactored() {
         
         if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'media') {
           // Play media file via OBS
-          console.log('Playing audio media:', manualItem.data.sourceName);
           // Send command to backend to play media
           if (sendMessageRef.current) {
             sendMessageRef.current({
@@ -635,7 +744,6 @@ export default function ControlPageRefactored() {
           }
         } else if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'mic') {
           // Unmute/turn on mic
-          console.log('Enabling mic:', manualItem.data.sourceName);
           if (sendMessageRef.current) {
             sendMessageRef.current({
               type: 'CONTROL_MIC',
@@ -669,7 +777,6 @@ export default function ControlPageRefactored() {
         if (isAudioCue && manualItem.data.mode === 'new') {
           if (manualItem.data.sourceType === 'media') {
             // Stop media playback
-            console.log('Stopping audio media:', manualItem.data.sourceName);
             if (sendMessageRef.current) {
               sendMessageRef.current({
                 type: 'STOP_AUDIO',
@@ -681,8 +788,7 @@ export default function ControlPageRefactored() {
             }
           } else if (manualItem.data.sourceType === 'mic') {
             // Mute mic
-            console.log('Muting mic:', manualItem.data.sourceName);
-            if (sendMessageRef.current) {
+              if (sendMessageRef.current) {
               sendMessageRef.current({
                 type: 'CONTROL_MIC',
                 itemId: manualItem.id,
@@ -707,7 +813,6 @@ export default function ControlPageRefactored() {
         
         if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'media') {
           // Play media file via OBS
-          console.log('Playing audio media:', manualItem.data.sourceName);
           // Send command to backend to play media
           if (sendMessageRef.current) {
             sendMessageRef.current({
@@ -720,7 +825,6 @@ export default function ControlPageRefactored() {
           }
         } else if (isAudioCue && manualItem.data.mode === 'new' && manualItem.data.sourceType === 'mic') {
           // Unmute/turn on mic
-          console.log('Enabling mic:', manualItem.data.sourceName);
           if (sendMessageRef.current) {
             sendMessageRef.current({
               type: 'CONTROL_MIC',
@@ -963,6 +1067,11 @@ export default function ControlPageRefactored() {
     setQrModalOpen(true);
   }, []);
   
+  // Open presenter view modal
+  const openPresenterView = useCallback(() => {
+    setPresenterModalOpen(true);
+  }, []);
+  
   // Listen for messages from control pad
   useEffect(() => {
     const handleMessage = (event) => {
@@ -1014,16 +1123,42 @@ export default function ControlPageRefactored() {
   
   // Toggle timers pause
   const toggleTimersPause = useCallback(() => {
-    setTimersPaused(prev => !prev);
-  }, []);
+    setTimersPaused(prev => {
+      const newPaused = !prev;
+      // Send timer sync when pausing/resuming
+      if (sendMessageRef.current && segmentStartTime) {
+        sendMessageRef.current({
+          type: 'TIMER_SYNC',
+          episodeId: episodeId,
+          segmentElapsed: Math.floor(segmentElapsed / 1000),
+          isRunning: !newPaused
+        });
+      }
+      return newPaused;
+    });
+  }, [episodeId, segmentElapsed, segmentStartTime]);
   
   // Toggle time format
   const toggleTimeFormat = useCallback(() => {
     setUse24HourTime(prev => !prev);
   }, []);
   
+  // Handle timer sync request from presenter view
+  const handleTimerSyncRequest = useCallback((requestedEpisodeId) => {
+    if (requestedEpisodeId === episodeId && sendMessageRef.current) {
+      const elapsedSeconds = Math.floor(segmentElapsed / 1000);
+      // Send current timer state immediately
+      sendMessageRef.current({
+        type: 'TIMER_SYNC',
+        episodeId: episodeId,
+        segmentElapsed: elapsedSeconds,
+        isRunning: !timersPaused && segmentStartTime !== null
+      });
+    }
+  }, [episodeId, segmentElapsed, timersPaused, segmentStartTime]);
+  
   // WebSocket for control surface and OBS commands
-  const { sendMessage } = useWebSocket(handleButtonClick);
+  const { sendMessage } = useWebSocket(handleButtonClick, handleTimerSyncRequest);
   
   // Update sendMessage ref whenever it changes
   useEffect(() => {
@@ -1055,6 +1190,7 @@ export default function ControlPageRefactored() {
         selectedEpisodeId={episodeId}
         onEpisodeChange={handleEpisodeChange}
         onControlSurfaceClick={openControlSurface}
+        onPresenterViewClick={openPresenterView}
       />
       
       <div style={{
@@ -1151,6 +1287,16 @@ export default function ControlPageRefactored() {
             setControlPadWindow(popup);
             setTimeout(() => updateControlPad(popup), 500);
           }
+        }}
+      />
+      
+      <PresenterQRModal
+        isOpen={presenterModalOpen}
+        onClose={() => setPresenterModalOpen(false)}
+        onOpenPresenter={() => {
+          const presenterUrl = `/presenter${window.location.search}`;
+          window.open(presenterUrl, 'PresenterView', 'width=1200,height=800,resizable=yes');
+          setPresenterModalOpen(false);
         }}
       />
       

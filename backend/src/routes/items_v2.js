@@ -159,6 +159,31 @@ router.post('/', (req, res) => {
     const row = db.executeGet('SELECT * FROM rundown_items WHERE id = ?', [result.lastInsertRowid]);
     const item = parseDataField(row);
     
+    // Broadcast rundown update to all presenter views for this episode
+    if (global.wss && group_id) {
+      const episodeInfo = db.executeGet(`
+        SELECT e.id as episode_id
+        FROM rundown_groups g
+        JOIN rundown_segments s ON g.segment_id = s.id
+        JOIN episodes e ON s.episode_id = e.id
+        WHERE g.id = ?
+      `, [group_id]);
+      
+      if (episodeInfo) {
+        const message = JSON.stringify({
+          type: 'RUNDOWN_UPDATE',
+          episodeId: episodeInfo.episode_id,
+          itemId: result.lastInsertRowid
+        });
+        
+        global.wss.clients.forEach(client => {
+          if (client.readyState === 1 && client.isPresenter && client.episodeId == episodeInfo.episode_id) {
+            client.send(message);
+          }
+        });
+      }
+    }
+    
     console.log('Created item:', item);
     res.status(201).json(item);
   } catch (err) {
@@ -228,6 +253,33 @@ router.patch('/:id', (req, res) => {
     const row = db.executeGet('SELECT * FROM rundown_items WHERE id = ?', [id]);
     const item = parseDataField(row);
     
+    // Broadcast rundown update to all presenter views for this episode
+    if (global.wss) {
+      // Get the episode ID for this item
+      const episodeInfo = db.executeGet(`
+        SELECT e.id as episode_id
+        FROM rundown_items i
+        JOIN rundown_groups g ON i.group_id = g.id
+        JOIN rundown_segments s ON g.segment_id = s.id
+        JOIN episodes e ON s.episode_id = e.id
+        WHERE i.id = ?
+      `, [id]);
+      
+      if (episodeInfo) {
+        const message = JSON.stringify({
+          type: 'RUNDOWN_UPDATE',
+          episodeId: episodeInfo.episode_id,
+          itemId: id
+        });
+        
+        global.wss.clients.forEach(client => {
+          if (client.readyState === 1 && client.isPresenter && client.episodeId == episodeInfo.episode_id) {
+            client.send(message);
+          }
+        });
+      }
+    }
+    
     // Check if this item has children (overlays)
     const childCount = db.executeGet(
       'SELECT COUNT(*) as count FROM rundown_items WHERE parent_item_id = ?',
@@ -254,6 +306,16 @@ router.delete('/:id', (req, res) => {
   const { cascade } = req.query; // ?cascade=true to delete children too
   
   try {
+    // Get episode ID before deleting
+    const episodeInfo = db.executeGet(`
+      SELECT e.id as episode_id
+      FROM rundown_items i
+      JOIN rundown_groups g ON i.group_id = g.id
+      JOIN rundown_segments s ON g.segment_id = s.id
+      JOIN episodes e ON s.episode_id = e.id
+      WHERE i.id = ?
+    `, [id]);
+    
     // Check if item has children
     const childCount = db.executeGet(
       'SELECT COUNT(*) as count FROM rundown_items WHERE parent_item_id = ?',
@@ -272,6 +334,22 @@ router.delete('/:id', (req, res) => {
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Item not found' });
+    }
+    
+    // Broadcast rundown update to all presenter views for this episode
+    if (global.wss && episodeInfo) {
+      const message = JSON.stringify({
+        type: 'RUNDOWN_UPDATE',
+        episodeId: episodeInfo.episode_id,
+        itemId: id,
+        deleted: true
+      });
+      
+      global.wss.clients.forEach(client => {
+        if (client.readyState === 1 && client.isPresenter && client.episodeId == episodeInfo.episode_id) {
+          client.send(message);
+        }
+      });
     }
     
     res.json({ 

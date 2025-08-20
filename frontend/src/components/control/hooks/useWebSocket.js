@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const useWebSocket = (onControlAction) => {
+const useWebSocket = (onControlAction, onTimerSyncRequest) => {
   const [ws, setWs] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   
@@ -24,6 +24,10 @@ const useWebSocket = (onControlAction) => {
         if (data.type === 'CONTROL_ACTION' && data.button && onControlAction) {
           onControlAction(data.button);
         }
+        
+        if (data.type === 'REQUEST_TIMER_SYNC' && onTimerSyncRequest) {
+          onTimerSyncRequest(data.episodeId);
+        }
       } catch (error) {
         // Silently ignore parse errors
       }
@@ -43,7 +47,7 @@ const useWebSocket = (onControlAction) => {
         websocket.close();
       }
     };
-  }, [onControlAction]);
+  }, [onControlAction, onTimerSyncRequest]);
   
   const sendMessage = useCallback((message) => {
     if (ws && ws.readyState === WebSocket.OPEN) {

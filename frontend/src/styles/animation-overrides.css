@@ -1,0 +1,80 @@
+/**
+ * Animation overrides for broadcast graphics
+ * Handles prefers-reduced-motion accessibility concerns
+ */
+
+/* Force animations mode - override prefers-reduced-motion for broadcast use */
+.force-animations .animate__animated {
+  animation-duration: var(--animate-duration) !important;
+  animation-delay: var(--animate-delay) !important;
+  animation-iteration-count: var(--animate-repeat) !important;
+}
+
+/* Restore all animate.css animations when in force mode */
+.force-animations * {
+  animation-play-state: running !important;
+}
+
+/* Minimal animations mode - use simple effects only */
+.minimal-animations .animate__animated:not(.animate__fadeIn):not(.animate__fadeOut) {
+  animation-name: fadeIn !important;
+  animation-duration: 0.5s !important;
+}
+
+/* No animations mode - disable all animations */
+.no-animations .animate__animated,
+.no-animations * {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Animation status indicator */
+.animation-status {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.animation-status.force { background-color: #4caf50; }
+.animation-status.minimal { background-color: #ff9800; }
+.animation-status.disabled { background-color: #f44336; }
+.animation-status.respect { background-color: #2196f3; }
+
+/* Enhanced debugging for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .animation-debug::before {
+    content: "⚠️ REDUCED MOTION DETECTED";
+    position: fixed;
+    top: 50px;
+    right: 10px;
+    background: #f44336;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    z-index: 10001;
+    animation: pulse 2s infinite;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animation-debug::after {
+    content: "✅ ANIMATIONS ENABLED";
+    position: fixed;
+    top: 80px;
+    right: 10px;
+    background: #4caf50;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    z-index: 10001;
+  }
+}
