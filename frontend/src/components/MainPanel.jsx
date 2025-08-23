@@ -3,7 +3,7 @@ import MediaTab from "./MediaTab";
 import RundownView from "./RundownView";
 import ShowsHome from "./ShowsHome";
 import ControlPageRefactored from "./control/ControlPageRefactored";
-import GraphicsTab from "./GraphicsTab";
+
 
 // --- Styles ---
 const STYLES = {
@@ -33,9 +33,7 @@ export default function MainPanel({ showId, showName, onDragEnd, onBackToShows, 
       <div style={STYLES.content}>
         {selectedTab === "media" ? (
           <MediaTab showId={showId} onBackToShows={onBackToShows} />
-        ) : selectedTab === "graphics" ? (
-          <GraphicsTab showId={showId} />
-        ) : selectedTab === "control" ? (
+        )  : selectedTab === "control" ? (
           <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
             <ControlPageRefactored />
           </div>

@@ -175,36 +175,7 @@ function AppInner() {
         flexShrink: 0,
         background: "#e3f2fd"
       }}>
-        <button
-          onClick={() => handleTabChange("graphics")}
-          style={{
-            background: selectedTab === "graphics" ? "#d2e6fa" : "#e3f2fd",
-            color: selectedTab === "graphics" ? "#1976d2" : "#7c7c7c",
-            border: selectedTab === "graphics" ? "1.5px solid #1976d2" : "1px solid #b1c7e7",
-            borderBottom: selectedTab === "graphics" ? "3px solid #1976d2" : "none",
-            borderRadius: 12,
-            padding: "6px 22px",
-            fontWeight: selectedTab === "graphics" ? 700 : 500,
-            fontSize: 16,
-            marginRight: 18,
-            marginLeft: 0,
-            marginTop: 0,
-            marginBottom: 0,
-            cursor: "pointer",
-            boxShadow: "none",
-            transition: "background 0.15s, border 0.15s"
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = '#d2e6fa';
-            e.currentTarget.style.border = '1.5px solid #1976d2';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = selectedTab === "graphics" ? '#d2e6fa' : '#e3f2fd';
-            e.currentTarget.style.border = selectedTab === "graphics" ? '1.5px solid #1976d2' : '1px solid #b1c7e7';
-          }}
-        >
-          Graphics
-        </button>
+        
         <button
           onClick={() => handleTabChange("media")}
           style={{

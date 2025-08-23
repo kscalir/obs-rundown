@@ -4,6 +4,8 @@ node_modules/
 # Build outputs
 dist/
 build/
+*.sqlite
+*.db
 
 # Environment files
 .env
@@ -24,9 +26,18 @@ build/
 *.png
 *.jpg
 *.mp3
+*.mov
+*.avi
+*.psd
+*.ai
 
 # Media directories
 backend/media/*
 backend/media/thumbs/*
 !backend/media/.gitkeep
 !backend/media/thumbs/.gitkeep
+
+# OS and backup clutter
+*.swp
+*.tmp
+*.bak
