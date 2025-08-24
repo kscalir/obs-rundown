@@ -1,3 +1,4 @@
+/* App.css - Keep original */
 #root {
   max-width: 1280px;
   margin: 0 auto;
@@ -5,6 +6,7 @@
   text-align: center;
 }
 
+/* Rest stays the same */
 .logo {
   height: 6em;
   padding: 1.5em;

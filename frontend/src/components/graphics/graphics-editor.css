@@ -1,0 +1,26 @@
+/* src/components/graphics/graphics-editor.css */
+/* Customize the splitter bars */
+.allotment .split-view-separator {
+  background: #374151; /* gray-700 */
+  transition: background 0.2s;
+}
+
+.allotment .split-view-separator:hover {
+  background: #4B5563; /* gray-600 */
+}
+
+/* Make the separator wider when hovering for easier grabbing */
+.allotment .split-view-separator-border {
+  width: 4px;
+  height: 4px;
+  background: transparent;
+}
+
+/* Dark theme for sashes */
+.allotment .sash {
+  background: transparent;
+}
+
+.allotment .sash:hover {
+  background: rgba(59, 130, 246, 0.5); /* blue with transparency */
+}

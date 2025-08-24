@@ -1,10 +1,19 @@
-/* Global app style to match Rundown tab */
-html, body, #root {
-  background: #fafdff !important;
-  color: #222;
-  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-  min-height: 100vh;
+/* global-style.css */
+html, body {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  min-height: 100vh;
+}
+
+/* Only apply background to app pages, not graphics editor */
+#root.app-root {
+  background: #fafdff !important;
+  color: #222;
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+}
+
+#root.graphics-editor-root {
+  /* Let graphics editor control its own background */
+  background: transparent;
 }

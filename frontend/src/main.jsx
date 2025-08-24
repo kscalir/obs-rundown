@@ -1,12 +1,16 @@
+// main.jsx - Updated version
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import './index.css'
-import './global-style.css'
+import './consolidated-TEST.css'
 import AppHome from './AppHome.jsx'
 import ControlSurfacePage from './ControlSurfacePage.jsx'
 import ControlPadPage from './ControlPadPage.jsx'
 import PresenterView from './PresenterView.jsx'
-import GraphicsEditorDev from './GraphicsEditorDev.tsx'
+import { GraphicsEditor } from './components/graphics'
+
+// Set consistent root class
+const rootElement = document.getElementById('root');
+rootElement.className = 'app-root';
 
 // Simple routing based on URL path
 const App = () => {
@@ -25,16 +29,13 @@ const App = () => {
   }
   
   if (path === '/graphics-editor') {
-    return <GraphicsEditorDev />;
+    return <GraphicsEditor />;
   }
-  
+
   return <AppHome />;
 };
 
-// Initialize animation settings before rendering
-
-
-createRoot(document.getElementById('root')).render(
+createRoot(rootElement).render(
   <StrictMode>
     <App />
   </StrictMode>,

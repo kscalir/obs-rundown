@@ -1,0 +1,30 @@
+/* graphics-editor.css */
+/* Only apply these styles when the body has the graphics-editor-mode class */
+body.graphics-editor-mode {
+  display: block !important;
+  place-items: initial !important;
+}
+
+body.graphics-editor-mode #root {
+  max-width: none !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  text-align: left !important;
+  background: transparent !important;
+}
+
+/* Make sure normal body does NOT have these styles */
+body:not(.graphics-editor-mode) {
+  /* This should use your original styles */
+  display: flex;
+  place-items: center;
+}
+
+body:not(.graphics-editor-mode) #root {
+  /* This should use your original styles */
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+}
